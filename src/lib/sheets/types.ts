@@ -1,4 +1,4 @@
-import type { Colaborador, Lancamento } from "@/data/mockData";
+import type { Colaborador, Lancamento } from "@/lib/domain/types";
 
 export type LancamentoRow = Lancamento & {
   gestorNome: string;
@@ -11,7 +11,7 @@ export type CadastroResponse = {
   gestores: { id: string; nome: string }[];
   colaboradores: Colaborador[];
   eventos: { id: string; nome: string }[];
-  source: "mock" | "sheets";
+  source: "sheets";
 };
 
 export type NovoLancamentoInput = {
@@ -22,7 +22,7 @@ export type NovoLancamentoInput = {
   horaInicio: string;
   horaFim: string;
   horas: number;
-  periodo: string;
+  periodo?: string;
   feriado: boolean;
   registradoPorEmail?: string | null;
 };

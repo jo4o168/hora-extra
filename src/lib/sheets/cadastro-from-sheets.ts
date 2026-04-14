@@ -1,4 +1,4 @@
-import type { Colaborador, Evento, Gestor } from "@/data/mockData";
+import type { Colaborador, Evento, Gestor } from "@/lib/domain/types";
 import { fetchRange, normalizeHeader, parseNumberBr, rowsToObjects } from "./spreadsheet";
 
 function pick(obj: Record<string, string>, aliases: string[]): string {
@@ -15,6 +15,10 @@ function pick(obj: Record<string, string>, aliases: string[]): string {
     }
   }
   return "";
+}
+
+function normalizeEntityId(value: string): string {
+  return value.trim().replace(/\.0+$/, "");
 }
 
 export function isCadastroSheetsConfigured(): boolean {
@@ -35,23 +39,46 @@ function parseGestores(rows: string[][]): Gestor[] {
       const id = pick(o, ["id", "gestor_id", "codigo"]);
       const nome = pick(o, ["nome", "gestor", "nome_gestor"]);
       if (!id || !nome) return null;
-      return { id, nome };
+      return { id: normalizeEntityId(id), nome };
     })
     .filter(Boolean) as Gestor[];
 }
 
-function parseColaboradores(rows: string[][]): Colaborador[] {
+function parseColaboradores(rows: string[][], gestores: Gestor[]): Colaborador[] {
   const objs = rowsToObjects(rows);
   return objs
     .map((o) => {
       const id = pick(o, ["id", "colaborador_id", "codigo", "matricula"]);
-      const nome = pick(o, ["nome", "colaborador", "nome_colaborador"]);
+      const nome = pick(o, ["nome", "nome_completo", "colaborador", "nome_colaborador"]);
       const cargo = pick(o, ["cargo", "funcao", "função"]) || "—";
-      const regimeRaw = pick(o, ["regime", "tipo", "clt_pj"]).toUpperCase();
+      const regimeRaw = pick(o, ["regime", "tipo", "clt_pj", "regime_cltpj"]).toUpperCase();
       const regime = regimeRaw.includes("PJ") ? "PJ" : "CLT";
-      const gestorId = pick(o, ["gestor_id", "gestorid", "id_gestor"]);
-      const salario = parseNumberBr(pick(o, ["salario", "salário", "salario_base"]));
-      const valorHoraRaw = pick(o, ["valor_hora", "valorhora", "valor_h"]);
+      const gestorRef = pick(o, [
+        "gestor_id",
+        "gestorid",
+        "id_gestor",
+        "gestor_responsavel",
+        "gestor_responsável",
+        "gestor",
+        "nome_gestor",
+      ]);
+      const gestorMatch =
+        gestores.find((g) => normalizeEntityId(g.id) === normalizeEntityId(gestorRef)) ||
+        gestores.find((g) => g.nome.trim().toLowerCase() === gestorRef.trim().toLowerCase());
+      const gestorId = gestorMatch?.id || normalizeEntityId(gestorRef);
+
+      const valorBase = parseNumberBr(
+        pick(o, [
+          "salario",
+          "salário",
+          "salario_base",
+          "salario_valor_hora_r",
+          "salario__valor_hora_r",
+          "salario_valor_hora",
+        ]),
+      );
+      const salario = valorBase;
+      const valorHoraRaw = pick(o, ["valor_hora", "valorhora", "valor_h", "salario_valor_hora_r"]);
       const valorHora = parseNumberBr(valorHoraRaw);
       if (!id || !nome || !gestorId) return null;
       const c: Colaborador = {
@@ -59,10 +86,11 @@ function parseColaboradores(rows: string[][]): Colaborador[] {
         nome,
         cargo,
         regime,
-        salario: regime === "PJ" ? 0 : salario,
-        gestorId,
+        salario,
+        gestorId: normalizeEntityId(gestorId),
       };
-      if (regime === "PJ" && valorHora > 0) c.valorHora = valorHora;
+      if (regime === "PJ") c.valorHora = valorHora > 0 ? valorHora : valorBase;
+      c.id = normalizeEntityId(c.id);
       return c;
     })
     .filter(Boolean) as Colaborador[];
@@ -75,7 +103,7 @@ function parseEventos(rows: string[][]): Evento[] {
       const id = pick(o, ["id", "evento_id", "codigo"]);
       const nome = pick(o, ["nome", "evento", "descricao", "descrição"]);
       if (!id || !nome) return null;
-      return { id, nome };
+      return { id: normalizeEntityId(id), nome };
     })
     .filter(Boolean) as Evento[];
 }
@@ -96,9 +124,10 @@ export async function loadCadastroFromSheets(): Promise<{
     fetchRange(id, re),
   ]);
 
+  const gestores = parseGestores(gr);
   return {
-    gestores: parseGestores(gr),
-    colaboradores: parseColaboradores(cr),
+    gestores,
+    colaboradores: parseColaboradores(cr, gestores),
     eventos: parseEventos(er),
   };
 }

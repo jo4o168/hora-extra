@@ -13,7 +13,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import type { LancamentoRow } from "@/lib/sheets/types";
+import type { CadastroResponse, LancamentoRow } from "@/lib/sheets/types";
 
 const MESES = [
   "Jan",
@@ -42,18 +42,28 @@ function Badge({ regime }: { regime: string }) {
 }
 
 export default function RelatorioPage() {
-  const [mesSelecionado, setMesSelecionado] = useState(5);
+  const [mesSelecionado, setMesSelecionado] = useState(new Date().getMonth());
   const [gestorFiltro, setGestorFiltro] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["lancamentos"],
     queryFn: async () => {
       const r = await fetch("/api/lancamentos", { credentials: "include" });
-      if (!r.ok) throw new Error("Falha ao carregar");
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error ?? "Falha ao carregar");
+      }
       return r.json() as Promise<{
         lancamentos: LancamentoRow[];
-        source: string;
       }>;
+    },
+  });
+  const { data: cadastroData } = useQuery({
+    queryKey: ["cadastro-relatorio"],
+    queryFn: async (): Promise<CadastroResponse> => {
+      const r = await fetch("/api/cadastro", { credentials: "include" });
+      if (!r.ok) throw new Error("Falha ao carregar cadastro");
+      return r.json();
     },
   });
 
@@ -86,6 +96,8 @@ export default function RelatorioPage() {
     return row?.regime === "PJ";
   }).length;
   const totalEventos = [...new Set(lancamentos.map((l) => l.eventoId))].length;
+  const totalColaboradoresAtuais = cadastroData?.colaboradores.length ?? 0;
+  const totalGestoresAtuais = cadastroData?.gestores.length ?? 0;
 
   const horasPorColab = useMemo(() => {
     const map = new Map<string, { nome: string; horas: number; regime: string }>();
@@ -98,7 +110,7 @@ export default function RelatorioPage() {
       entry.horas += l.horas;
       map.set(l.colaboradorId, entry);
     });
-    return Array.from(map.values()).sort((a, b) => b.horas - a.horas);
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [lancamentos]);
 
   const horasPorEvento = useMemo(() => {
@@ -108,7 +120,7 @@ export default function RelatorioPage() {
       entry.horas += l.horas;
       map.set(l.eventoId, entry);
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [lancamentos]);
 
   const cardClass = "bg-card rounded-lg border-[0.5px] border-border p-5";
@@ -123,16 +135,48 @@ export default function RelatorioPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-foreground mb-6">Relatórios</h2>
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 max-w-2xl">
+          <p className="text-sm font-medium text-destructive">Não foi possível carregar os lançamentos.</p>
+          <p className="mt-1 text-xs text-destructive/90">
+            {error instanceof Error ? error.message : "Verifique a conexão com o Google Sheets."}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="mt-3 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            {isFetching ? "Tentando novamente..." : "Tentar novamente"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
+      <div className="mb-6 rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Relatórios e resultados</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Visão consolidada de horas extras, custos e produtividade por período.
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Período selecionado</p>
+            <p className="text-sm font-semibold text-foreground">{MESES[mesSelecionado]}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-foreground">Relatórios e resultados</h2>
-          {data?.source === "mock" && (
-            <p className="text-xs text-muted-foreground mt-1">
-              Dados de demonstração; conecte o Google Sheets para ver os lançamentos reais.
-            </p>
-          )}
+          <h3 className="text-base font-semibold text-foreground">Filtros</h3>
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex gap-1 flex-wrap">
@@ -169,7 +213,9 @@ export default function RelatorioPage() {
       <div className="grid grid-cols-4 gap-4 mb-6 max-lg:grid-cols-2">
         <div className={metricClass}>
           <p className="text-xs text-muted-foreground mb-1">Total de horas</p>
-          <p className="text-2xl font-bold text-foreground">{totalHoras}h</p>
+          <p className="text-2xl font-bold text-foreground">
+            {totalHoras.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
+          </p>
         </div>
         <div className={metricClass}>
           <p className="text-xs text-muted-foreground mb-1">Valor (referência)</p>
@@ -178,7 +224,7 @@ export default function RelatorioPage() {
           </p>
         </div>
         <div className={metricClass}>
-          <p className="text-xs text-muted-foreground mb-1">Colaboradores ativos</p>
+          <p className="text-xs text-muted-foreground mb-1">Colaboradores ativos no período</p>
           <p className="text-2xl font-bold text-foreground">{colabsAtivos.length}</p>
           <p className="text-xs text-muted-foreground mt-1">
             {cltUnique} CLT · {pjCount} PJ
@@ -189,10 +235,24 @@ export default function RelatorioPage() {
           <p className="text-2xl font-bold text-foreground">{totalEventos}</p>
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-4 mb-6 max-lg:grid-cols-1">
+        <div className={metricClass}>
+          <p className="text-xs text-muted-foreground mb-1">Total de colaboradores atuais</p>
+          <p className="text-2xl font-bold text-foreground">{totalColaboradoresAtuais}</p>
+          <p className="text-xs text-muted-foreground mt-1">Baseado no cadastro da planilha</p>
+        </div>
+        <div className={metricClass}>
+          <p className="text-xs text-muted-foreground mb-1">Total de gestores atuais</p>
+          <p className="text-2xl font-bold text-foreground">{totalGestoresAtuais}</p>
+          <p className="text-xs text-muted-foreground mt-1">Baseado no cadastro da planilha</p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6 max-lg:grid-cols-1">
         <div className={cardClass}>
-          <h3 className="text-sm font-semibold text-foreground mb-4">Horas por colaborador</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-4">
+            Relatório de horas extras totais por funcionário
+          </h3>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={horasPorColab} layout="vertical" margin={{ left: 20 }}>
               <XAxis type="number" tick={{ fontSize: 12 }} />
@@ -208,7 +268,7 @@ export default function RelatorioPage() {
         </div>
 
         <div className={cardClass}>
-          <h3 className="text-sm font-semibold text-foreground mb-4">Distribuição por evento</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-4">Distribuição de horas por evento</h3>
           <div className="flex items-center">
             <ResponsiveContainer width="55%" height={250}>
               <PieChart>
@@ -237,11 +297,48 @@ export default function RelatorioPage() {
                     style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
                   />
                   <span className="text-foreground truncate">{ev.nome}</span>
-                  <span className="text-muted-foreground ml-auto font-medium">{ev.horas}h</span>
+                  <span className="text-muted-foreground ml-auto font-medium">
+                    {ev.horas.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
+                  </span>
                 </div>
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className={`${cardClass} mb-6`}>
+        <h3 className="text-sm font-semibold text-foreground mb-4">Horas totais por funcionário</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                {["Funcionário", "Regime", "Horas totais"].map((h) => (
+                  <th key={h} className="py-2 px-3 text-xs font-medium text-muted-foreground">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {horasPorColab.map((item) => (
+                <tr key={item.nome} className="border-b border-border last:border-0">
+                  <td className="py-2.5 px-3 font-medium">{item.nome}</td>
+                  <td className="py-2.5 px-3">
+                    <Badge regime={item.regime} />
+                  </td>
+                  <td className="py-2.5 px-3">{item.horas}h</td>
+                </tr>
+              ))}
+              {horasPorColab.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-8 text-center text-muted-foreground">
+                    Nenhuma hora extra encontrada para os filtros selecionados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -251,7 +348,7 @@ export default function RelatorioPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                {["Colaborador", "Regime", "Evento", "Data", "Horas", "Feriado", "Valor", "Gestor"].map(
+                {["Colaborador", "Regime", "Evento", "Data", "Horas", "Feriado", "Valor/hora", "Gestor"].map(
                   (h) => (
                     <th key={h} className="py-2 px-3 text-xs font-medium text-muted-foreground">
                       {h}
@@ -271,7 +368,9 @@ export default function RelatorioPage() {
                   <td className="py-2.5 px-3">
                     {new Date(l.data + "T12:00:00").toLocaleDateString("pt-BR")}
                   </td>
-                  <td className="py-2.5 px-3">{l.horas}h</td>
+                  <td className="py-2.5 px-3">
+                    {l.horas.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
+                  </td>
                   <td className="py-2.5 px-3">
                     {l.feriado ? (
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FAEEDA] text-[#633806]">
@@ -281,14 +380,16 @@ export default function RelatorioPage() {
                       "—"
                     )}
                   </td>
-                  <td className="py-2.5 px-3 font-medium">R$ {l.valor.toFixed(2)}</td>
+                  <td className="py-2.5 px-3 font-medium">
+                    R$ {(l.horas > 0 ? l.valor / l.horas : 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </td>
                   <td className="py-2.5 px-3 text-muted-foreground">{l.gestorNome}</td>
                 </tr>
               ))}
               {lancamentos.length === 0 && (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-muted-foreground">
-                    Nenhum lançamento neste período.
+                    Nenhum lançamento encontrado para os filtros selecionados.
                   </td>
                 </tr>
               )}

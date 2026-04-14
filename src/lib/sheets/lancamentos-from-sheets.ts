@@ -1,9 +1,6 @@
-import {
-  calcularValor,
-  colaboradores as mockColabs,
-  type Colaborador,
-  type Lancamento,
-} from "@/data/mockData";
+import { calcularValor } from "@/lib/domain/calculo";
+import type { Colaborador, Evento, Gestor, Lancamento } from "@/lib/domain/types";
+import { loadCadastroFromSheets } from "./cadastro-from-sheets";
 import type { LancamentoRow } from "@/lib/sheets/types";
 import { fetchRange, normalizeHeader, parseNumberBr } from "./spreadsheet";
 
@@ -40,6 +37,22 @@ function getCell(
   return "";
 }
 
+function parseHoras(raw: string): number {
+  const value = (raw || "").trim();
+  if (!value) return 0;
+
+  // Ex.: 08:30 ou 08:30:00 -> 8.5
+  const timeMatch = value.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+  if (timeMatch) {
+    const h = Number(timeMatch[1] || 0);
+    const m = Number(timeMatch[2] || 0);
+    const s = Number(timeMatch[3] || 0);
+    return h + m / 60 + s / 3600;
+  }
+
+  return parseNumberBr(value);
+}
+
 export function isLancamentosReadConfigured(): boolean {
   return Boolean(
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
@@ -57,9 +70,22 @@ function lancamentosSpreadsheetId(): string {
   );
 }
 
-function findColabByNome(nome: string): Colaborador | undefined {
-  const n = nome.trim().toLowerCase();
-  return mockColabs.find((c) => c.nome.toLowerCase() === n);
+type CadastroLookup = {
+  colaboradores: Colaborador[];
+  gestores: Gestor[];
+  eventos: Evento[];
+};
+
+function findByIdOrName<T extends { id: string; nome: string }>(
+  list: T[],
+  idValue: string,
+  nameValue: string,
+): T | undefined {
+  const byId = idValue ? list.find((x) => x.id === idValue) : undefined;
+  if (byId) return byId;
+  if (!nameValue) return undefined;
+  const nameNorm = nameValue.trim().toLowerCase();
+  return list.find((x) => x.nome.trim().toLowerCase() === nameNorm);
 }
 
 /** Converte célula de data do Sheets para YYYY-MM-DD quando possível. */
@@ -79,6 +105,7 @@ export function rowToLancamentoRow(
   row: string[],
   headers: string[] | null,
   rowIndex: number,
+  cadastro: CadastroLookup,
 ): LancamentoRow | null {
   const cells = row.map((c) => (c == null ? "" : String(c).trim()));
   const m = headers?.length ? buildHeaderIndex(headers) : null;
@@ -87,6 +114,9 @@ export function rowToLancamentoRow(
   let colaboradorNome = "";
   let regime: "CLT" | "PJ" = "CLT";
   let eventoNome = "";
+  let gestorId = "";
+  let colaboradorId = "";
+  let eventoId = "";
   let data = "";
   let horas = 0;
   let periodo: Lancamento["periodo"] = "Diurno";
@@ -94,31 +124,53 @@ export function rowToLancamentoRow(
   let valor = 0;
 
   if (m) {
-    gestorNome = getCell(m, cells, ["gestor", "gestor_responsavel", "gestor_responsável"]);
-    colaboradorNome = getCell(m, cells, ["colaborador", "nome_colaborador", "funcionario", "funcionário"]);
-    const regStr = getCell(m, cells, ["regime", "tipo"]).toUpperCase();
-    regime = regStr.includes("PJ") ? "PJ" : "CLT";
-    eventoNome = getCell(m, cells, ["evento", "projeto", "obra"]);
+    // Novo layout (aba Horas Extras)
+    colaboradorId = getCell(m, cells, ["colaborador_id", "id_colaborador"]);
+    gestorId = getCell(m, cells, ["gestor_id", "id_gestor"]);
+    eventoId = getCell(m, cells, ["evento_id", "id_evento"]);
     data = normalizeDateYmd(getCell(m, cells, ["data", "dia"]));
-    const hi = getCell(m, cells, ["hora_inicio", "horário_inicial", "horario_inicial", "inicio", "início"]);
-    const hf = getCell(m, cells, ["hora_fim", "horário_final", "horario_final", "fim", "termino", "término"]);
-    void hi;
-    void hf;
-    horas = parseNumberBr(getCell(m, cells, ["horas", "total_horas", "qtd_horas", "quantidade_horas"]));
+    const entrada = getCell(m, cells, ["entrada", "hora_inicio", "horario_inicial"]);
+    const saida = getCell(m, cells, ["saida", "saída", "hora_fim", "horario_final"]);
+    void entrada;
+    void saida;
+    horas = parseHoras(getCell(m, cells, ["horas_extras_totais", "horas_totais", "horas", "total_horas"]));
+    const valor100 = parseNumberBr(getCell(m, cells, ["valor_100", "valor__100", "valor100"]));
+    const valor50 = parseNumberBr(getCell(m, cells, ["valor_50", "valor__50", "valor50"]));
+    valor = valor100 + valor50;
+    if (valor100 > 0) {
+      feriado = true;
+    }
+
     const per = getCell(m, cells, ["periodo", "período"]);
     if (per === "Noturno" || per === "Diurno" || per === "Integral") {
       periodo = per;
     }
+
+    // Compatibilidade com layout antigo por nome (caso haja linhas legadas)
+    gestorNome = getCell(m, cells, ["gestor", "gestor_responsavel", "gestor_responsável"]);
+    colaboradorNome = getCell(m, cells, ["colaborador", "nome_colaborador", "funcionario", "funcionário"]);
+    const regStr = getCell(m, cells, ["regime", "tipo", "pj_clt"]).toUpperCase();
+    if (regStr) regime = regStr.includes("PJ") ? "PJ" : "CLT";
+    eventoNome = getCell(m, cells, ["evento", "projeto", "obra"]);
+    const hi = getCell(m, cells, ["hora_inicio", "horário_inicial", "horario_inicial", "inicio", "início", "entrada"]);
+    const hf = getCell(m, cells, ["hora_fim", "horário_final", "horario_final", "fim", "termino", "término", "saida", "saída"]);
+    void hi;
+    void hf;
+    if (horas <= 0) {
+      horas = parseHoras(getCell(m, cells, ["horas_extras_totais", "horas", "qtd_horas", "quantidade_horas"]));
+    }
     const f = getCell(m, cells, ["feriado", "feriado_nacional"]).toLowerCase();
     feriado = f === "sim" || f === "true" || f === "1" || f === "s";
-    valor = parseNumberBr(getCell(m, cells, ["valor", "valor_total", "total"]));
+    if (valor <= 0) {
+      valor = parseNumberBr(getCell(m, cells, ["valor", "valor_total", "total"]));
+    }
   } else {
     gestorNome = cells[0] ?? "";
     colaboradorNome = cells[1] ?? "";
     regime = (cells[2] ?? "").toUpperCase().includes("PJ") ? "PJ" : "CLT";
     eventoNome = cells[3] ?? "";
     data = normalizeDateYmd(cells[4] ?? "");
-    horas = parseNumberBr(cells[7]);
+    horas = parseHoras(cells[7]);
     const per = (cells[8] ?? "").trim();
     if (per === "Noturno" || per === "Diurno" || per === "Integral") {
       periodo = per;
@@ -128,12 +180,20 @@ export function rowToLancamentoRow(
     valor = cells.length > 12 ? parseNumberBr(cells[12]) : 0;
   }
 
-  if (!colaboradorNome || !data || horas <= 0) return null;
+  const colabMatch = findByIdOrName(cadastro.colaboradores, colaboradorId, colaboradorNome);
+  const gestorMatch = findByIdOrName(cadastro.gestores, gestorId, gestorNome);
+  const eventoMatch = findByIdOrName(cadastro.eventos, eventoId, eventoNome);
 
-  const colabMatch = findColabByNome(colaboradorNome);
-  const colaboradorId = colabMatch?.id ?? `ext:${normalizeHeader(colaboradorNome)}-${rowIndex}`;
-  const gestorId = `ext:g-${normalizeHeader(gestorNome)}-${rowIndex}`;
-  const eventoId = `ext:e-${normalizeHeader(eventoNome)}-${rowIndex}`;
+  const colaboradorIdFinal =
+    colabMatch?.id || colaboradorId || `ext:c-${normalizeHeader(colaboradorNome)}-${rowIndex}`;
+  const gestorIdFinal = gestorMatch?.id || gestorId || `ext:g-${normalizeHeader(gestorNome)}-${rowIndex}`;
+  const eventoIdFinal = eventoMatch?.id || eventoId || `ext:e-${normalizeHeader(eventoNome)}-${rowIndex}`;
+
+  const colaboradorNomeFinal = colabMatch?.nome || colaboradorNome;
+  const gestorNomeFinal = gestorMatch?.nome || gestorNome;
+  const eventoNomeFinal = eventoMatch?.nome || eventoNome;
+
+  if (!colaboradorNomeFinal || !data || horas <= 0) return null;
 
   const regimeFinal = colabMatch?.regime ?? regime;
   let valorFinal = valor;
@@ -143,17 +203,17 @@ export function rowToLancamentoRow(
 
   return {
     id: `sheet-${rowIndex}`,
-    colaboradorId,
-    gestorId,
-    eventoId,
+    colaboradorId: colaboradorIdFinal,
+    gestorId: gestorIdFinal,
+    eventoId: eventoIdFinal,
     data,
     horas,
     periodo,
     feriado,
     valor: valorFinal,
-    gestorNome: gestorNome || "—",
-    colaboradorNome,
-    eventoNome: eventoNome || "—",
+    gestorNome: gestorNomeFinal || "—",
+    colaboradorNome: colaboradorNomeFinal,
+    eventoNome: eventoNomeFinal || "—",
     regime: regimeFinal,
   };
 }
@@ -163,6 +223,7 @@ export async function loadLancamentosFromSheets(): Promise<LancamentoRow[]> {
   const range = process.env.GOOGLE_SHEETS_LANCAMENTOS_READ_RANGE!;
   const rows = await fetchRange(spreadsheetId, range);
   if (!rows.length) return [];
+  const cadastro = await loadCadastroFromSheets();
 
   const headers = rows[0].map((h) => String(h));
   const hasHeader = headers.some((h) => normalizeHeader(h).length > 0);
@@ -172,7 +233,7 @@ export async function loadLancamentosFromSheets(): Promise<LancamentoRow[]> {
   const out: LancamentoRow[] = [];
   let i = 0;
   for (const row of dataRows) {
-    const lr = rowToLancamentoRow(row, headerRow, i);
+    const lr = rowToLancamentoRow(row, headerRow, i, cadastro);
     if (lr) out.push(lr);
     i++;
   }

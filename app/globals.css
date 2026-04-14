@@ -49,6 +49,49 @@
     --badge-feriado-bg: 37 80% 92%;
     --badge-feriado-text: 30 72% 20%;
   }
+
+  .dark {
+    --background: 220 20% 10%;
+    --foreground: 210 40% 96%;
+
+    --card: 220 18% 14%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 220 18% 14%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 210 72% 55%;
+    --primary-foreground: 220 30% 10%;
+
+    --secondary: 220 16% 18%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 220 14% 18%;
+    --muted-foreground: 220 12% 72%;
+
+    --accent: 94 45% 45%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 40% 96%;
+
+    --border: 220 14% 24%;
+    --input: 220 14% 24%;
+    --ring: 210 72% 55%;
+
+    --sidebar-bg: 220 18% 13%;
+    --sidebar-active-bg: 210 35% 24%;
+    --sidebar-active-text: 210 80% 82%;
+
+    --metric-bg: 220 15% 18%;
+
+    --badge-clt-bg: 100 28% 25%;
+    --badge-clt-text: 100 52% 84%;
+    --badge-pj-bg: 210 35% 24%;
+    --badge-pj-text: 210 80% 82%;
+    --badge-feriado-bg: 32 38% 24%;
+    --badge-feriado-text: 36 85% 78%;
+  }
 }
 
 @layer base {
