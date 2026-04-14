@@ -10,8 +10,13 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const data = await getLancamentosData();
-  return NextResponse.json(data);
+  try {
+    const data = await getLancamentosData();
+    return NextResponse.json(data);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Falha ao carregar lançamentos no Google Sheets";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -28,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   const { gestorId, colaboradorId, eventoId, data, periodo, horaInicio, horaFim } = body;
-  if (!gestorId || !colaboradorId || !eventoId || !data || !periodo) {
+  if (!gestorId || !colaboradorId || !eventoId || !data) {
     return NextResponse.json({ error: "Campos obrigatórios ausentes" }, { status: 400 });
   }
   if (!horaInicio || !horaFim) {
@@ -54,13 +59,15 @@ export async function POST(request: Request) {
       horaInicio,
       horaFim,
       horas: horasCalculadas,
-      periodo,
+      periodo: periodo || "Integral",
       feriado,
       registradoPorEmail: session.user?.email,
     });
+    console.log("[api/lancamentos] append ok:", result.updatedRange ?? "sem updatedRange");
     return NextResponse.json(result);
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "Falha ao registrar" }, { status: 500 });
+    const message = e instanceof Error ? e.message : "Falha ao registrar";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

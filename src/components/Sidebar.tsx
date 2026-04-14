@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Clock, BarChart3, LogOut } from "lucide-react";
+import { useTheme } from "next-themes";
+import { Clock, BarChart3, LogOut, Moon, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const navItems = [
   { href: "/lancamento", label: "Lançar horas", icon: Clock },
@@ -23,6 +25,12 @@ function initials(name?: string | null, email?: string | null) {
 export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  const isDark = resolvedTheme === "dark";
   const displayName = session?.user?.name ?? session?.user?.email ?? "Conta Google";
   const sub = session?.user?.email ?? "";
 
@@ -63,6 +71,14 @@ export default function Sidebar() {
             {sub && <p className="text-xs text-muted-foreground truncate">{sub}</p>}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
+        >
+          {mounted ? (isDark ? <Sun size={16} /> : <Moon size={16} />) : <Moon size={16} />}
+          {mounted ? (isDark ? "Modo claro" : "Modo escuro") : "Modo escuro"}
+        </button>
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: "/login" })}

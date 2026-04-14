@@ -27,8 +27,30 @@ export function normalizeHeader(raw: string): string {
 export function parseNumberBr(value: string | number | undefined | null): number {
   if (value === undefined || value === null || value === "") return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const s = String(value).trim().replace(/\./g, "").replace(",", ".");
-  const n = parseFloat(s);
+  const raw = String(value).trim().replace(/[^\d,.\-]/g, "");
+  if (!raw) return 0;
+
+  const hasComma = raw.includes(",");
+  const hasDot = raw.includes(".");
+  let normalized = raw;
+
+  // Ex.: 1.234,56 -> 1234.56
+  if (hasComma && hasDot) {
+    normalized = raw.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    // Ex.: 1234,56 -> 1234.56
+    normalized = raw.replace(",", ".");
+  } else if (hasDot) {
+    // Se houver múltiplos pontos, trata como milhar: 1.234.567 -> 1234567
+    const dotCount = (raw.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      normalized = raw.replace(/\./g, "");
+    } else {
+      // Com um ponto só, mantém decimal estilo en-US: 1234.56
+      normalized = raw;
+    }
+  }
+  const n = parseFloat(normalized);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -54,14 +76,34 @@ export function rowsToObjects(rows: string[][]): Record<string, string>[] {
 export async function fetchRange(spreadsheetId: string, range: string): Promise<string[][]> {
   const sheets = getSheetsClient();
   if (!sheets) return [];
+  const normalizedRange = normalizeA1Range(range);
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range,
+    range: normalizedRange,
     valueRenderOption: "FORMATTED_VALUE",
   });
 
   const values = res.data.values;
   if (!values?.length) return [];
   return values.map((row) => row.map((c) => (c == null ? "" : String(c))));
+}
+
+/**
+ * Garante A1 notation válida quando o nome da aba tem espaços/símbolos.
+ * Ex.: Horas Extras!A:O -> 'Horas Extras'!A:O
+ */
+export function normalizeA1Range(range: string): string {
+  const raw = (range || "").trim();
+  const bangIndex = raw.indexOf("!");
+  if (bangIndex <= 0) return raw;
+
+  const sheetName = raw.slice(0, bangIndex).trim();
+  const suffix = raw.slice(bangIndex + 1);
+  const alreadyQuoted = sheetName.startsWith("'") && sheetName.endsWith("'");
+  if (alreadyQuoted) return raw;
+
+  const requiresQuote = /[\s\-()[\]{}]/.test(sheetName);
+  if (!requiresQuote) return raw;
+  return `'${sheetName.replace(/'/g, "''")}'!${suffix}`;
 }

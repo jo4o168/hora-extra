@@ -8,6 +8,12 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const data = await getCadastroData();
-  return NextResponse.json(data);
+  try {
+    const data = await getCadastroData();
+    return NextResponse.json(data);
+  } catch (e) {
+    console.error("[api/cadastro] erro ao carregar cadastro:", e);
+    const message = e instanceof Error ? e.message : "Falha ao carregar cadastro no Google Sheets";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

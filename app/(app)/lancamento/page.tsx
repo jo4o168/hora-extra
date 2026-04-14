@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { calcularValor, getValorHoraDisplay } from "@/data/mockData";
+import { calcularValor, getValorHoraDisplay } from "@/lib/domain/calculo";
 import { getFeriadoNacionalInfo } from "@/lib/feriados-br";
 import { calcHorasEntreHorarios } from "@/lib/horas-intervalo";
 import type { CadastroResponse } from "@/lib/sheets/service";
@@ -26,11 +26,14 @@ function FeriadoNacionalBadge({ nome }: { nome: string }) {
 }
 
 export default function LancamentoPage() {
-  const { data: cadastro, isLoading } = useQuery({
+  const { data: cadastro, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["cadastro"],
     queryFn: async (): Promise<CadastroResponse> => {
       const r = await fetch("/api/cadastro", { credentials: "include" });
-      if (!r.ok) throw new Error("Falha ao carregar cadastro");
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error ?? "Falha ao carregar cadastro");
+      }
       return r.json();
     },
   });
@@ -41,15 +44,15 @@ export default function LancamentoPage() {
   const [data, setData] = useState("");
   const [horaInicio, setHoraInicio] = useState("");
   const [horaFim, setHoraFim] = useState("");
-  const [periodo, setPeriodo] = useState("");
-  const [resumo, setResumo] = useState<null | Record<string, string>>(null);
   const [confirmado, setConfirmado] = useState(false);
+  const cadastroDisponivel = Boolean(cadastro && !isError);
 
   const gestores = cadastro?.gestores ?? [];
   const colaboradores = cadastro?.colaboradores ?? [];
   const eventos = cadastro?.eventos ?? [];
 
-  const colabsFiltrados = colaboradores.filter((c) => c.gestorId === gestorId);
+  const normalized = (value: string) => value.trim().toLowerCase();
+  const colabsFiltrados = colaboradores.filter((c) => normalized(c.gestorId) === normalized(gestorId));
   const colabSelecionado = colaboradores.find((c) => c.id === colaboradorId);
 
   const feriadoInfo = useMemo(() => getFeriadoNacionalInfo(data), [data]);
@@ -74,7 +77,6 @@ export default function LancamentoPage() {
           horaInicio,
           horaFim,
           horas,
-          periodo,
         }),
       });
       if (!r.ok) {
@@ -92,38 +94,19 @@ export default function LancamentoPage() {
     setData("");
     setHoraInicio("");
     setHoraFim("");
-    setPeriodo("");
-    setResumo(null);
     setConfirmado(false);
   }
 
-  function handleSalvar() {
-    if (!gestorId || !colaboradorId || !eventoId || !data || !horaInicio || !horaFim || !periodo) return;
+  async function handleSalvar() {
+    if (!gestorId || !colaboradorId || !eventoId || !data || !horaInicio || !horaFim) return;
     if (horas <= 0) return;
+    if (!cadastroDisponivel) return;
 
-    const colab = colaboradores.find((c) => c.id === colaboradorId)!;
-    const gestor = gestores.find((g) => g.id === gestorId)!;
-    const evento = eventos.find((e) => e.id === eventoId)!;
-    const valor = calcularValor(colab, horas, feriado);
+    const colab = colaboradores.find((c) => c.id === colaboradorId);
+    const gestor = gestores.find((g) => g.id === gestorId);
+    const evento = eventos.find((e) => e.id === eventoId);
+    if (!colab || !gestor || !evento) return;
 
-    setResumo({
-      Gestor: gestor.nome,
-      Colaborador: colab.nome,
-      Regime: colab.regime,
-      Evento: evento.nome,
-      Data: new Date(data + "T12:00:00").toLocaleDateString("pt-BR"),
-      "Horário inicial": horaInicio,
-      "Horário final": horaFim,
-      "Total de horas": `${horas}h`,
-      Período: periodo,
-      "Feriado nacional": feriado
-        ? `Sim${feriadoInfo.nome ? ` (${feriadoInfo.nome})` : ""}`
-        : "Não",
-      "Valor estimado (referência)": `R$ ${valor.toFixed(2)}`,
-    });
-  }
-
-  async function confirmar() {
     try {
       await salvarMutation.mutateAsync();
       setConfirmado(true);
@@ -131,7 +114,7 @@ export default function LancamentoPage() {
         limpar();
       }, 2000);
     } catch {
-      /* erro exibido no botão */
+      setConfirmado(false);
     }
   }
 
@@ -140,28 +123,42 @@ export default function LancamentoPage() {
     "w-full px-3 py-2.5 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring appearance-none";
   const labelClass = "block text-sm font-medium text-foreground mb-1.5";
 
-  if (isLoading || !cadastro) {
-    return (
-      <div className="max-w-3xl">
-        <h2 className="text-xl font-semibold text-foreground mb-6">Lançar horas extras</h2>
-        <p className="text-sm text-muted-foreground">Carregando cadastro…</p>
-      </div>
-    );
-  }
-
   const podeSalvarBase =
+    cadastroDisponivel &&
     gestorId &&
     colaboradorId &&
     eventoId &&
     data &&
     horaInicio &&
     horaFim &&
-    periodo &&
     horas > 0;
 
   return (
     <div className="max-w-3xl">
       <h2 className="text-xl font-semibold text-foreground mb-6">Lançar horas extras</h2>
+      {isLoading && (
+        <div className="mb-4 rounded-lg border border-border bg-card p-3">
+          <p className="text-sm text-muted-foreground">Carregando cadastro...</p>
+        </div>
+      )}
+      {isError && (
+        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">
+            Cadastro indisponível no momento. Os dropdowns são carregados pelo Google Sheets.
+          </p>
+          <p className="mt-1 text-xs text-destructive/90">
+            {error instanceof Error ? error.message : "Verifique a configuração da API e da planilha."}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="mt-3 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            {isFetching ? "Tentando novamente..." : "Tentar novamente"}
+          </button>
+        </div>
+      )}
 
       <div className={`${cardClass} mb-4`}>
         <h3 className="text-sm font-semibold text-foreground mb-4">Identificação</h3>
@@ -175,8 +172,9 @@ export default function LancamentoPage() {
                 setGestorId(e.target.value);
                 setColaboradorId("");
               }}
+              disabled={!cadastroDisponivel}
             >
-              <option value="">Selecione...</option>
+              <option value="">{cadastroDisponivel ? "Selecione..." : "Aguardando cadastro..."}</option>
               {gestores.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.nome}
@@ -190,7 +188,7 @@ export default function LancamentoPage() {
               className={selectClass}
               value={colaboradorId}
               onChange={(e) => setColaboradorId(e.target.value)}
-              disabled={!gestorId}
+              disabled={!cadastroDisponivel || !gestorId}
             >
               <option value="">Selecione...</option>
               {colabsFiltrados.map((c) => (
@@ -223,6 +221,7 @@ export default function LancamentoPage() {
               className={selectClass}
               value={eventoId}
               onChange={(e) => setEventoId(e.target.value)}
+              disabled={!cadastroDisponivel}
             >
               <option value="">Selecione...</option>
               {eventos.map((ev) => (
@@ -270,19 +269,6 @@ export default function LancamentoPage() {
               onChange={(e) => setHoraFim(e.target.value)}
             />
           </div>
-          <div className="col-span-2">
-            <label className={labelClass}>Período</label>
-            <select
-              className={selectClass}
-              value={periodo}
-              onChange={(e) => setPeriodo(e.target.value)}
-            >
-              <option value="">Selecione...</option>
-              <option>Diurno</option>
-              <option>Noturno</option>
-              <option>Integral</option>
-            </select>
-          </div>
         </div>
 
         {horaInicio && horaFim && (
@@ -307,45 +293,18 @@ export default function LancamentoPage() {
         </button>
         <button
           onClick={handleSalvar}
-          disabled={!podeSalvarBase}
+          disabled={!podeSalvarBase || salvarMutation.isPending}
           className="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:pointer-events-none"
         >
-          Salvar lançamento
+          {salvarMutation.isPending ? "Salvando..." : "Salvar lançamento"}
         </button>
       </div>
-
-      {resumo && !confirmado && (
-        <div className={`${cardClass} mt-6`}>
-          <h3 className="text-sm font-semibold text-foreground mb-4">Resumo do lançamento</h3>
-          <div className="space-y-2">
-            {Object.entries(resumo).map(([k, v]) => (
-              <div key={k} className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{k}</span>
-                <span className="font-medium">{v}</span>
-              </div>
-            ))}
-          </div>
-          {salvarMutation.isError && (
-            <p className="text-sm text-destructive mt-3">
-              Não foi possível registrar. Tente novamente.
-            </p>
-          )}
-          <div className="flex gap-3 mt-5">
-            <button
-              onClick={() => setResumo(null)}
-              className="px-5 py-2.5 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-            >
-              Voltar
-            </button>
-            <button
-              onClick={confirmar}
-              disabled={salvarMutation.isPending}
-              className="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-60"
-            >
-              {salvarMutation.isPending ? "Enviando…" : "Confirmar"}
-            </button>
-          </div>
-        </div>
+      {salvarMutation.isError && (
+        <p className="text-sm text-destructive mt-3">
+          {salvarMutation.error instanceof Error
+            ? salvarMutation.error.message
+            : "Não foi possível registrar. Tente novamente."}
+        </p>
       )}
 
       {confirmado && (
