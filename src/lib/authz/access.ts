@@ -13,9 +13,13 @@ function normalizeEmail(value: string): string {
 function parseCsvEnv(name: string): string[] {
   const raw = process.env[name] ?? "";
   return raw
-    .split(",")
+    .split(/[;,]/g)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function normalizeDomain(value: string): string {
+  return value.trim().toLowerCase().replace(/^@/, "");
 }
 
 function parseGestorMapEnv(name: string): Map<string, string[]> {
@@ -43,7 +47,7 @@ export function isAllowedDomain(email: string): boolean {
   if (!allowedDomains.length) return true;
   const normalizedEmail = normalizeEmail(email);
   const domain = normalizedEmail.split("@")[1] ?? "";
-  return allowedDomains.map((d) => d.toLowerCase()).includes(domain);
+  return allowedDomains.map(normalizeDomain).includes(domain);
 }
 
 export function resolveAccessScope(input: {
