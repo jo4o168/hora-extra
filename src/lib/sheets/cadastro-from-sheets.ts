@@ -38,8 +38,9 @@ function parseGestores(rows: string[][]): Gestor[] {
     .map((o) => {
       const id = pick(o, ["id", "gestor_id", "codigo"]);
       const nome = pick(o, ["nome", "gestor", "nome_gestor"]);
+      const email = pick(o, ["email", "e_mail", "gestor_email", "email_gestor"]).toLowerCase();
       if (!id || !nome) return null;
-      return { id: normalizeEntityId(id), nome };
+      return { id: normalizeEntityId(id), nome, email: email || undefined };
     })
     .filter(Boolean) as Gestor[];
 }

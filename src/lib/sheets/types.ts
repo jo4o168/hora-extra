@@ -13,7 +13,7 @@ export type LancamentoRow = Lancamento & {
 };
 
 export type CadastroResponse = {
-  gestores: { id: string; nome: string }[];
+  gestores: { id: string; nome: string; email?: string }[];
   colaboradores: Colaborador[];
   eventos: { id: string; nome: string }[];
   source: "sheets";
