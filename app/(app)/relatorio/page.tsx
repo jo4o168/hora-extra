@@ -43,7 +43,7 @@ function Badge({ regime }: { regime: string }) {
 }
 
 export default function RelatorioPage() {
-  const [mesSelecionado, setMesSelecionado] = useState(new Date().getMonth());
+  const [mesSelecionado, setMesSelecionado] = useState<number | "todos">("todos");
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
   const [gestorFiltro, setGestorFiltro] = useState("");
   const [buscaColaborador, setBuscaColaborador] = useState("");
@@ -94,7 +94,7 @@ export default function RelatorioPage() {
       const d = new Date(l.data + "T12:00:00");
       const mes = d.getMonth();
       const ano = d.getFullYear();
-      if (mes !== mesSelecionado) return false;
+      if (mesSelecionado !== "todos" && mes !== mesSelecionado) return false;
       if (ano !== anoSelecionado) return false;
       if (gestorFiltro && l.gestorId !== gestorFiltro) return false;
       return true;
@@ -169,6 +169,15 @@ export default function RelatorioPage() {
       .filter((l) => l.colaboradorId === colaboradorDetalheId)
       .sort((a, b) => new Date(b.data + "T12:00:00").getTime() - new Date(a.data + "T12:00:00").getTime());
   }, [colaboradorDetalheId, lancamentos]);
+
+  const lancamentosRecentes = useMemo(() => {
+    return [...lancamentos].sort((a, b) => {
+      if (a.sheetRowNumber !== b.sheetRowNumber) {
+        return b.sheetRowNumber - a.sheetRowNumber;
+      }
+      return new Date(b.data + "T12:00:00").getTime() - new Date(a.data + "T12:00:00").getTime();
+    });
+  }, [lancamentos]);
 
   const atualizarPagamentoMutation = useMutation({
     mutationFn: async ({ sheetRowNumber, pago }: { sheetRowNumber: number; pago: boolean }) => {
@@ -246,7 +255,7 @@ export default function RelatorioPage() {
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Período selecionado</p>
             <p className="text-sm font-semibold text-foreground">
-              {MESES[mesSelecionado]} de {anoSelecionado}
+              {mesSelecionado === "todos" ? `Todos os meses de ${anoSelecionado}` : `${MESES[mesSelecionado]} de ${anoSelecionado}`}
             </p>
           </div>
         </div>
@@ -258,6 +267,18 @@ export default function RelatorioPage() {
         </div>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex gap-1 flex-wrap">
+            <button
+              key="todos"
+              type="button"
+              onClick={() => setMesSelecionado("todos")}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                mesSelecionado === "todos"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Todos
+            </button>
             {MESES.map((m, i) => (
               <button
                 key={m}
@@ -468,7 +489,7 @@ export default function RelatorioPage() {
               </tr>
             </thead>
             <tbody>
-              {lancamentos.map((l) => (
+              {lancamentosRecentes.map((l) => (
                 <tr key={l.id} className="border-b border-border last:border-0">
                   <td className="py-2.5 px-3 font-medium">{l.colaboradorNome}</td>
                   <td className="py-2.5 px-3">
@@ -496,7 +517,7 @@ export default function RelatorioPage() {
                   <td className="py-2.5 px-3 text-muted-foreground">{l.gestorNome}</td>
                 </tr>
               ))}
-              {lancamentos.length === 0 && (
+              {lancamentosRecentes.length === 0 && (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-muted-foreground">
                     Nenhum lançamento encontrado para os filtros selecionados.
