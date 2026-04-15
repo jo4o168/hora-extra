@@ -5,6 +5,11 @@ export type LancamentoRow = Lancamento & {
   colaboradorNome: string;
   eventoNome: string;
   regime: Colaborador["regime"];
+  horaInicio: string;
+  horaFim: string;
+  valorHora: number;
+  jaFoiPago: boolean;
+  sheetRowNumber: number;
 };
 
 export type CadastroResponse = {

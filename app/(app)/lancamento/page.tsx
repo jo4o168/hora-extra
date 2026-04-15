@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { calcularValor, getValorHoraDisplay } from "@/lib/domain/calculo";
 import { getFeriadoNacionalInfo } from "@/lib/feriados-br";
 import { calcHorasEntreHorarios } from "@/lib/horas-intervalo";
 import type { CadastroResponse } from "@/lib/sheets/service";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { LancamentoRow } from "@/lib/sheets/types";
 
 function Badge({ regime }: { regime: string }) {
   const cls =
@@ -26,6 +28,10 @@ function FeriadoNacionalBadge({ nome }: { nome: string }) {
 }
 
 export default function LancamentoPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const sheetRowNumberParam = Number(searchParams.get("sheetRowNumber") || "");
+  const emEdicao = Number.isFinite(sheetRowNumberParam) && sheetRowNumberParam > 0;
   const { data: cadastro, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["cadastro"],
     queryFn: async (): Promise<CadastroResponse> => {
@@ -46,6 +52,43 @@ export default function LancamentoPage() {
   const [horaFim, setHoraFim] = useState("");
   const [confirmado, setConfirmado] = useState(false);
   const cadastroDisponivel = Boolean(cadastro && !isError);
+  const [preenchimentoInicialFeito, setPreenchimentoInicialFeito] = useState(false);
+
+  const { data: lancamentosData } = useQuery({
+    queryKey: ["lancamentos", emEdicao ? sheetRowNumberParam : "new"],
+    enabled: emEdicao,
+    queryFn: async (): Promise<{ lancamentos: LancamentoRow[] }> => {
+      const r = await fetch("/api/lancamentos", { credentials: "include" });
+      if (!r.ok) throw new Error("Falha ao carregar lançamentos");
+      return r.json();
+    },
+  });
+
+  useEffect(() => {
+    if (emEdicao) return;
+    const gestorIdParam = searchParams.get("gestorId");
+    const colaboradorIdParam = searchParams.get("colaboradorId");
+    const eventoIdParam = searchParams.get("eventoId");
+    const dataParam = searchParams.get("data");
+
+    if (gestorIdParam) setGestorId(gestorIdParam);
+    if (colaboradorIdParam) setColaboradorId(colaboradorIdParam);
+    if (eventoIdParam) setEventoId(eventoIdParam);
+    if (dataParam) setData(dataParam);
+  }, [searchParams, emEdicao]);
+
+  useEffect(() => {
+    if (!emEdicao || preenchimentoInicialFeito || !lancamentosData?.lancamentos?.length) return;
+    const alvo = lancamentosData.lancamentos.find((l) => l.sheetRowNumber === sheetRowNumberParam);
+    if (!alvo) return;
+    setGestorId(alvo.gestorId);
+    setColaboradorId(alvo.colaboradorId);
+    setEventoId(alvo.eventoId);
+    setData(alvo.data);
+    setHoraInicio(alvo.horaInicio || "");
+    setHoraFim(alvo.horaFim || "");
+    setPreenchimentoInicialFeito(true);
+  }, [emEdicao, preenchimentoInicialFeito, lancamentosData?.lancamentos, sheetRowNumberParam]);
 
   const gestores = cadastro?.gestores ?? [];
   const colaboradores = cadastro?.colaboradores ?? [];
@@ -66,10 +109,11 @@ export default function LancamentoPage() {
   const salvarMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch("/api/lancamentos", {
-        method: "POST",
+        method: emEdicao ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(emEdicao ? { sheetRowNumber: sheetRowNumberParam } : {}),
           gestorId,
           colaboradorId,
           eventoId,
@@ -110,6 +154,12 @@ export default function LancamentoPage() {
     try {
       await salvarMutation.mutateAsync();
       setConfirmado(true);
+      if (emEdicao) {
+        setTimeout(() => {
+          router.push("/relatorio");
+        }, 600);
+        return;
+      }
       setTimeout(() => {
         limpar();
       }, 2000);
@@ -135,7 +185,24 @@ export default function LancamentoPage() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="text-xl font-semibold text-foreground mb-6">Lançar horas extras</h2>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold text-foreground">Lançar horas extras</h2>
+        {emEdicao && (
+          <span className="inline-flex items-center rounded-full bg-[#FFF4CC] px-3 py-1 text-xs font-semibold text-[#7A5A00]">
+            Modo edição
+          </span>
+        )}
+      </div>
+      {emEdicao && (
+        <div className="mb-4 rounded-lg border border-[#F5D97A] bg-[#FFFBEA] px-4 py-3">
+          <p className="text-sm font-medium text-[#7A5A00]">
+            Você está editando um lançamento existente.
+          </p>
+          <p className="mt-1 text-xs text-[#8A6B0A]">
+            Ao salvar, os dados serão atualizados na mesma linha da planilha (não será criado um novo registro).
+          </p>
+        </div>
+      )}
       {isLoading && (
         <div className="mb-4 rounded-lg border border-border bg-card p-3">
           <p className="text-sm text-muted-foreground">Carregando cadastro...</p>
@@ -274,7 +341,16 @@ export default function LancamentoPage() {
         {horaInicio && horaFim && (
           <p className="mt-4 text-sm text-foreground">
             <span className="text-muted-foreground">Total calculado:</span>{" "}
-            <span className="font-semibold">{horas > 0 ? `${horas}h` : "—"}</span>
+            <span className="font-semibold">
+              {horas > 0
+                ? `${Math.floor(horas)}h${String(Math.round((horas - Math.floor(horas)) * 60)).padStart(2, "0")}min`
+                : "—"}
+            </span>
+            {horas > 0 && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                ({horas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h)
+              </span>
+            )}
             {horas <= 0 && horaInicio && horaFim && (
               <span className="text-muted-foreground ml-2 text-xs">
                 (ajuste os horários; se o turno passar da meia-noite, o fim deve ser menor que o início)
@@ -296,7 +372,7 @@ export default function LancamentoPage() {
           disabled={!podeSalvarBase || salvarMutation.isPending}
           className="px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:pointer-events-none"
         >
-          {salvarMutation.isPending ? "Salvando..." : "Salvar lançamento"}
+          {salvarMutation.isPending ? "Salvando..." : emEdicao ? "Salvar alterações" : "Salvar lançamento"}
         </button>
       </div>
       {salvarMutation.isError && (
@@ -309,7 +385,9 @@ export default function LancamentoPage() {
 
       {confirmado && (
         <div className={`${cardClass} mt-6 border-accent`}>
-          <p className="text-sm text-accent font-medium">✓ Lançamento registrado com sucesso!</p>
+          <p className="text-sm text-accent font-medium">
+            ✓ {emEdicao ? "Lançamento atualizado com sucesso!" : "Lançamento registrado com sucesso!"}
+          </p>
         </div>
       )}
     </div>
