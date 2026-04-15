@@ -36,15 +36,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user }) {
       const email = (user.email ?? "").trim().toLowerCase();
-      if (!email) return false;
-      if (!isAllowedDomain(email)) return false;
+      if (!email) return "/acesso-negado?motivo=email";
+      if (!isAllowedDomain(email)) return "/acesso-negado?motivo=dominio";
 
       try {
         const cadastro = await getCadastroData();
         const access = resolveAccessScope({ email, cadastro });
-        return access.isAdmin || access.allowedGestorIds.length > 0;
+        if (!access.isAdmin && access.allowedGestorIds.length === 0) {
+          return "/acesso-negado?motivo=permissao";
+        }
+        return true;
       } catch {
-        return false;
+        return "/acesso-negado?motivo=configuracao";
       }
     },
   },

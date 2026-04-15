@@ -1,12 +1,23 @@
 import { auth } from "@/auth";
+import { isAllowedDomain } from "@/lib/authz/access";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
   const { nextUrl } = req;
   const isLoggedIn = !!req.auth;
+  const pathname = nextUrl.pathname;
+  const email = req.auth?.user?.email?.trim().toLowerCase() ?? "";
+  const hasAllowedDomain = email ? isAllowedDomain(email) : false;
 
-  if (nextUrl.pathname.startsWith("/login")) {
+  if (pathname.startsWith("/acesso-negado")) {
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith("/login")) {
     if (isLoggedIn) {
+      if (!hasAllowedDomain) {
+        return NextResponse.redirect(new URL("/acesso-negado?motivo=dominio", nextUrl));
+      }
       return NextResponse.redirect(new URL("/lancamento", nextUrl));
     }
     return NextResponse.next();
@@ -14,6 +25,9 @@ export default auth((req) => {
 
   if (!isLoggedIn) {
     return NextResponse.redirect(new URL("/login", nextUrl));
+  }
+  if (!hasAllowedDomain) {
+    return NextResponse.redirect(new URL("/acesso-negado?motivo=dominio", nextUrl));
   }
 
   return NextResponse.next();
