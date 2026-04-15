@@ -1,8 +1,10 @@
 import { auth } from "@/auth";
+import { isAllowedDomain, resolveAccessScope } from "@/lib/authz/access";
 import { isFeriadoNacionalBr } from "@/lib/feriados-br";
 import { calcHorasEntreHorarios } from "@/lib/horas-intervalo";
 import {
   appendLancamento,
+  getCadastroData,
   getLancamentosData,
   updateLancamento,
   updateLancamentoPagamento,
@@ -18,7 +20,18 @@ export async function GET() {
 
   try {
     const data = await getLancamentosData();
-    return NextResponse.json(data);
+    const email = session.user?.email?.trim().toLowerCase();
+    if (!email || !isAllowedDomain(email)) {
+      return NextResponse.json({ error: "Acesso negado para este e-mail" }, { status: 403 });
+    }
+    const cadastro = await getCadastroData();
+    const access = resolveAccessScope({ email, cadastro });
+    if (access.isAdmin) return NextResponse.json(data);
+    const allowed = new Set(access.allowedGestorIds);
+    return NextResponse.json({
+      ...data,
+      lancamentos: data.lancamentos.filter((l) => allowed.has(l.gestorId)),
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Falha ao carregar lançamentos no Google Sheets";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -39,6 +52,10 @@ export async function POST(request: Request) {
   }
 
   const { gestorId, colaboradorId, eventoId, data, periodo, horaInicio, horaFim } = body;
+  const email = session.user?.email?.trim().toLowerCase();
+  if (!email || !isAllowedDomain(email)) {
+    return NextResponse.json({ error: "Acesso negado para este e-mail" }, { status: 403 });
+  }
   if (!gestorId || !colaboradorId || !eventoId || !data) {
     return NextResponse.json({ error: "Campos obrigatórios ausentes" }, { status: 400 });
   }
@@ -57,6 +74,16 @@ export async function POST(request: Request) {
   const feriado = isFeriadoNacionalBr(data);
 
   try {
+    const cadastro = await getCadastroData();
+    const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && !access.allowedGestorIds.includes(gestorId)) {
+      return NextResponse.json({ error: "Sem permissão para lançar para este gestor" }, { status: 403 });
+    }
+    const colab = cadastro.colaboradores.find((c) => c.id === colaboradorId);
+    if (!colab || (!access.isAdmin && !access.allowedGestorIds.includes(colab.gestorId))) {
+      return NextResponse.json({ error: "Colaborador não permitido para seu acesso" }, { status: 403 });
+    }
+
     const result = await appendLancamento({
       gestorId,
       colaboradorId,
@@ -99,6 +126,20 @@ export async function PATCH(request: Request) {
   }
 
   try {
+    const email = session.user?.email?.trim().toLowerCase();
+    if (!email || !isAllowedDomain(email)) {
+      return NextResponse.json({ error: "Acesso negado para este e-mail" }, { status: 403 });
+    }
+    const cadastro = await getCadastroData();
+    const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin) {
+      const data = await getLancamentosData();
+      const target = data.lancamentos.find((l) => l.sheetRowNumber === body.sheetRowNumber);
+      if (!target || !access.allowedGestorIds.includes(target.gestorId)) {
+        return NextResponse.json({ error: "Sem permissão para alterar este lançamento" }, { status: 403 });
+      }
+    }
+
     const result = await updateLancamentoPagamento({
       sheetRowNumber: body.sheetRowNumber,
       pago: body.pago,
@@ -124,6 +165,10 @@ export async function PUT(request: Request) {
   }
 
   const { gestorId, colaboradorId, eventoId, data, periodo, horaInicio, horaFim, sheetRowNumber } = body;
+  const email = session.user?.email?.trim().toLowerCase();
+  if (!email || !isAllowedDomain(email)) {
+    return NextResponse.json({ error: "Acesso negado para este e-mail" }, { status: 403 });
+  }
   if (!sheetRowNumber || typeof sheetRowNumber !== "number") {
     return NextResponse.json({ error: "sheetRowNumber inválido" }, { status: 400 });
   }
@@ -145,6 +190,19 @@ export async function PUT(request: Request) {
   const feriado = isFeriadoNacionalBr(data);
 
   try {
+    const cadastro = await getCadastroData();
+    const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && !access.allowedGestorIds.includes(gestorId)) {
+      return NextResponse.json({ error: "Sem permissão para editar este gestor" }, { status: 403 });
+    }
+    if (!access.isAdmin) {
+      const dataLanc = await getLancamentosData();
+      const target = dataLanc.lancamentos.find((l) => l.sheetRowNumber === sheetRowNumber);
+      if (!target || !access.allowedGestorIds.includes(target.gestorId)) {
+        return NextResponse.json({ error: "Sem permissão para editar este lançamento" }, { status: 403 });
+      }
+    }
+
     const result = await updateLancamento({
       sheetRowNumber,
       gestorId,

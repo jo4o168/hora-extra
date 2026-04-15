@@ -1,5 +1,7 @@
 import Google from "@auth/core/providers/google";
 import NextAuth from "next-auth";
+import { isAllowedDomain, resolveAccessScope } from "@/lib/authz/access";
+import { getCadastroData } from "@/lib/sheets/service";
 
 function resolveAuthSecret(): string {
   const fromEnv = (process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET)?.trim();
@@ -30,5 +32,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   pages: {
     signIn: "/login",
+  },
+  callbacks: {
+    async signIn({ user }) {
+      const email = (user.email ?? "").trim().toLowerCase();
+      if (!email) return false;
+      if (!isAllowedDomain(email)) return false;
+
+      try {
+        const cadastro = await getCadastroData();
+        const access = resolveAccessScope({ email, cadastro });
+        return access.isAdmin || access.allowedGestorIds.length > 0;
+      } catch {
+        return false;
+      }
+    },
   },
 });

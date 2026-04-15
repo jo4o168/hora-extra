@@ -5,6 +5,7 @@ export type Periodo = "Diurno" | "Noturno" | "Integral";
 export interface Gestor {
   id: string;
   nome: string;
+  email?: string;
 }
 
 export interface Evento {

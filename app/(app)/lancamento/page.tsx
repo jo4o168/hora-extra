@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { calcularValor, getValorHoraDisplay } from "@/lib/domain/calculo";
 import { getFeriadoNacionalInfo } from "@/lib/feriados-br";
 import { calcHorasEntreHorarios } from "@/lib/horas-intervalo";
 import type { CadastroResponse } from "@/lib/sheets/service";
@@ -272,9 +271,6 @@ export default function LancamentoPage() {
             <span className="font-medium">{colabSelecionado.nome}</span>
             <span className="text-muted-foreground">{colabSelecionado.cargo}</span>
             <Badge regime={colabSelecionado.regime} />
-            <span className="text-muted-foreground ml-auto">
-              {getValorHoraDisplay(colabSelecionado)}
-            </span>
           </div>
         )}
       </div>
