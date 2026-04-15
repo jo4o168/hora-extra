@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
-import { isAllowedDomain } from "@/lib/authz/access";
+import { isAllowedDomain, resolveAccessScope } from "@/lib/authz/access";
+import { getCadastroData } from "@/lib/sheets/service";
 import { NextResponse } from "next/server";
 
-export default auth((req) => {
+export default auth(async (req) => {
   const { nextUrl } = req;
   const isLoggedIn = !!req.auth;
   const pathname = nextUrl.pathname;
@@ -28,6 +29,15 @@ export default auth((req) => {
   }
   if (!hasAllowedDomain) {
     return NextResponse.redirect(new URL("/acesso-negado?motivo=dominio", nextUrl));
+  }
+  try {
+    const cadastro = await getCadastroData();
+    const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && access.allowedGestorIds.length === 0) {
+      return NextResponse.redirect(new URL("/acesso-negado?motivo=permissao", nextUrl));
+    }
+  } catch {
+    return NextResponse.redirect(new URL("/acesso-negado?motivo=configuracao", nextUrl));
   }
 
   return NextResponse.next();
