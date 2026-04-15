@@ -27,6 +27,9 @@ export async function GET() {
     const cadastro = await getCadastroData();
     const access = resolveAccessScope({ email, cadastro });
     if (access.isAdmin) return NextResponse.json(data);
+    if (!access.allowedGestorIds.length) {
+      return NextResponse.json({ error: "Usuário sem permissão de gestor" }, { status: 403 });
+    }
     const allowed = new Set(access.allowedGestorIds);
     return NextResponse.json({
       ...data,
@@ -76,6 +79,9 @@ export async function POST(request: Request) {
   try {
     const cadastro = await getCadastroData();
     const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && !access.allowedGestorIds.length) {
+      return NextResponse.json({ error: "Usuário sem permissão de gestor" }, { status: 403 });
+    }
     if (!access.isAdmin && !access.allowedGestorIds.includes(gestorId)) {
       return NextResponse.json({ error: "Sem permissão para lançar para este gestor" }, { status: 403 });
     }
@@ -132,6 +138,9 @@ export async function PATCH(request: Request) {
     }
     const cadastro = await getCadastroData();
     const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && !access.allowedGestorIds.length) {
+      return NextResponse.json({ error: "Usuário sem permissão de gestor" }, { status: 403 });
+    }
     if (!access.isAdmin) {
       const data = await getLancamentosData();
       const target = data.lancamentos.find((l) => l.sheetRowNumber === body.sheetRowNumber);
@@ -192,6 +201,9 @@ export async function PUT(request: Request) {
   try {
     const cadastro = await getCadastroData();
     const access = resolveAccessScope({ email, cadastro });
+    if (!access.isAdmin && !access.allowedGestorIds.length) {
+      return NextResponse.json({ error: "Usuário sem permissão de gestor" }, { status: 403 });
+    }
     if (!access.isAdmin && !access.allowedGestorIds.includes(gestorId)) {
       return NextResponse.json({ error: "Sem permissão para editar este gestor" }, { status: 403 });
     }
