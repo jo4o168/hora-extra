@@ -32,8 +32,32 @@ export default function LoginPage() {
         </button>
       </div>
 
-      <div className="relative min-h-[calc(100vh-3rem)] max-w-5xl mx-auto grid items-center gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="lg:pr-8">
+      <div className="relative min-h-[calc(100vh-3rem)] max-w-5xl mx-auto grid gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="w-full max-w-md justify-self-center lg:justify-self-end order-1 lg:order-2 flex items-center justify-center py-10 sm:py-12 lg:py-0">
+          <div className="w-full bg-card rounded-2xl border border-border p-6 sm:p-8 shadow-lg shadow-primary/10">
+            <div className="flex items-center justify-center mb-4">
+              <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Clock3 className="h-5 w-5 text-primary" />
+              </div>
+            </div>
+            <h2 className="text-2xl font-semibold text-foreground text-center mb-1">Hora Extra Certa</h2>
+            <p className="text-sm text-muted-foreground text-center mb-6">
+              Entre com sua conta Google para continuar.
+            </p>
+            <button
+              type="button"
+              onClick={() => signIn("google", { callbackUrl: "/lancamento" })}
+              className="w-full py-3.5 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              Continuar com Google
+            </button>
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Você será redirecionado para autenticação do Google.
+            </p>
+          </div>
+        </section>
+
+        <section className="lg:pr-8 order-2 lg:order-1">
           <p className="inline-flex items-center rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground">
             Plataforma interna
           </p>
@@ -57,30 +81,6 @@ export default function LoginPage() {
                 <span className="text-sm text-foreground">{item.text}</span>
               </div>
             ))}
-          </div>
-        </section>
-
-        <section className="w-full max-w-md justify-self-center lg:justify-self-end">
-          <div className="bg-card rounded-2xl border border-border p-6 sm:p-8 shadow-lg shadow-primary/10">
-            <div className="flex items-center justify-center mb-4">
-              <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                <Clock3 className="h-5 w-5 text-primary" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-semibold text-foreground text-center mb-1">Hora Extra Certa</h2>
-            <p className="text-sm text-muted-foreground text-center mb-6">
-              Entre com sua conta Google para continuar.
-            </p>
-            <button
-              type="button"
-              onClick={() => signIn("google", { callbackUrl: "/lancamento" })}
-              className="w-full py-3.5 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              Continuar com Google
-            </button>
-            <p className="mt-4 text-center text-xs text-muted-foreground">
-              Você será redirecionado para autenticação do Google.
-            </p>
           </div>
         </section>
       </div>
