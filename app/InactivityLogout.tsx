@@ -4,6 +4,9 @@ import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 
+const TAB_AUTH_KEY = "hec:tab-auth-active";
+const LOGIN_INTENT_KEY = "hec:login-intent";
+
 function minutesToMs(minutes: number) {
   return Math.max(1, minutes) * 60_000;
 }
@@ -20,6 +23,30 @@ export default function InactivityLogout() {
 
   const timerRef = useRef<number | null>(null);
   const signedOutRef = useRef(false);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      sessionStorage.removeItem(TAB_AUTH_KEY);
+      sessionStorage.removeItem(LOGIN_INTENT_KEY);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const hasTabAuth = sessionStorage.getItem(TAB_AUTH_KEY) === "1";
+    const hasLoginIntent = sessionStorage.getItem(LOGIN_INTENT_KEY) === "1";
+
+    if (!hasTabAuth && !hasLoginIntent) {
+      void signOut({ redirect: true, callbackUrl: "/login" }).finally(() => {
+        router.replace("/login");
+      });
+      return;
+    }
+
+    sessionStorage.setItem(TAB_AUTH_KEY, "1");
+    sessionStorage.removeItem(LOGIN_INTENT_KEY);
+  }, [router, status]);
 
   useEffect(() => {
     // Se o usuário já saiu (expiração/erro) e permaneceu numa rota protegida, garante redirect.

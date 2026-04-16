@@ -13,6 +13,11 @@ export default function LoginPage() {
   }, []);
   const isDark = resolvedTheme === "dark";
 
+  const handleLogin = () => {
+    sessionStorage.setItem("hec:login-intent", "1");
+    void signIn("google", { callbackUrl: "/lancamento" });
+  };
+
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_hsl(var(--primary)/0.14)_0,_transparent_45%)]" />
@@ -32,7 +37,7 @@ export default function LoginPage() {
         </button>
       </div>
 
-      <div className="relative min-h-[calc(100vh-3rem)] max-w-5xl mx-auto grid gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="relative min-h-[calc(100vh-3rem)] max-w-5xl mx-auto grid gap-6 lg:gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
         <section className="w-full max-w-md justify-self-center lg:justify-self-end order-1 lg:order-2 flex items-center justify-center py-10 sm:py-12 lg:py-0">
           <div className="w-full bg-card rounded-2xl border border-border p-6 sm:p-8 shadow-lg shadow-primary/10">
             <div className="flex items-center justify-center mb-4">
@@ -46,7 +51,7 @@ export default function LoginPage() {
             </p>
             <button
               type="button"
-              onClick={() => signIn("google", { callbackUrl: "/lancamento" })}
+              onClick={handleLogin}
               className="w-full py-3.5 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity"
             >
               Continuar com Google
@@ -57,7 +62,7 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="lg:pr-8 order-2 lg:order-1">
+        <section className="lg:pr-8 order-2 lg:order-1 lg:self-center">
           <p className="inline-flex items-center rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground">
             Plataforma interna
           </p>
