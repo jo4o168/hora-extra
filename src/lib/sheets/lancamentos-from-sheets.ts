@@ -246,6 +246,7 @@ export function rowToLancamentoRow(
     eventoNome: eventoNomeFinal || "—",
     regime: regimeFinal,
     jaFoiPago,
+    status: colabMatch?.status,
     sheetRowNumber,
   };
 }

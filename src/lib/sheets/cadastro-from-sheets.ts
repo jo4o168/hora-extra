@@ -21,6 +21,17 @@ function normalizeEntityId(value: string): string {
   return value.trim().replace(/\.0+$/, "");
 }
 
+function normalizeStatus(raw: string): string {
+  const value = (raw || "").trim();
+  if (!value) return "";
+  const lowered = value.toLowerCase().replaceAll("não", "nao");
+  if (lowered.startsWith("nao") || lowered.includes("inativo") || lowered.includes("deslig") || lowered.includes("afast")) {
+    return "Não ativo";
+  }
+  if (lowered.includes("ativo")) return "Ativo";
+  return value;
+}
+
 export function isCadastroSheetsConfigured(): boolean {
   return Boolean(
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
@@ -54,6 +65,7 @@ function parseColaboradores(rows: string[][], gestores: Gestor[]): Colaborador[]
       const cargo = pick(o, ["cargo", "funcao", "função"]) || "—";
       const regimeRaw = pick(o, ["regime", "tipo", "clt_pj", "regime_cltpj"]).toUpperCase();
       const regime = regimeRaw.includes("PJ") ? "PJ" : "CLT";
+      const status = normalizeStatus(pick(o, ["status", "situacao", "situação"]));
       const gestorRef = pick(o, [
         "gestor_id",
         "gestorid",
@@ -89,6 +101,7 @@ function parseColaboradores(rows: string[][], gestores: Gestor[]): Colaborador[]
         regime,
         salario,
         gestorId: normalizeEntityId(gestorId),
+        status: status || undefined,
       };
       if (regime === "PJ") c.valorHora = valorHora > 0 ? valorHora : valorBase;
       c.id = normalizeEntityId(c.id);
