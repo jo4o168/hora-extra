@@ -14,7 +14,6 @@ export default function LoginPage() {
   const isDark = resolvedTheme === "dark";
 
   const handleLogin = () => {
-    sessionStorage.setItem("hec:login-intent", "1");
     void signIn("google", { callbackUrl: "/lancamento" });
   };
 
