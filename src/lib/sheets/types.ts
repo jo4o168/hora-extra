@@ -9,6 +9,7 @@ export type LancamentoRow = Lancamento & {
   horaFim: string;
   valorHora: number;
   jaFoiPago: boolean;
+  status?: string;
   sheetRowNumber: number;
 };
 

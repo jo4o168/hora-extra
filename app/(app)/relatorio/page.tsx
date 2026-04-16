@@ -42,6 +42,21 @@ function Badge({ regime }: { regime: string }) {
   );
 }
 
+function StatusBadge({ status }: { status?: string }) {
+  const value = (status || "").trim();
+  if (!value) return null;
+  const lowered = value.toLowerCase().replaceAll("não", "nao");
+  const inactive = lowered.startsWith("nao") || lowered.includes("inativo") || lowered.includes("deslig");
+  const active = !inactive && lowered.includes("ativo");
+  const cls = active
+    ? "bg-[#E2EFDA] text-[#27500A]"
+    : inactive
+      ? "bg-[#F8D7DA] text-[#842029]"
+      : "bg-[#F1F3F5] text-[#495057]";
+  const label = active ? "Ativo" : inactive ? "Não ativo" : value;
+  return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+}
+
 export default function RelatorioPage() {
   const [mesSelecionado, setMesSelecionado] = useState<number | "todos">("todos");
   const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear());
@@ -170,6 +185,14 @@ export default function RelatorioPage() {
       .sort((a, b) => new Date(b.data + "T12:00:00").getTime() - new Date(a.data + "T12:00:00").getTime());
   }, [colaboradorDetalheId, lancamentos]);
 
+  const statusByColabId = useMemo(() => {
+    const map = new Map<string, string>();
+    (cadastroData?.colaboradores ?? []).forEach((c) => {
+      if (c.id) map.set(c.id, c.status || "");
+    });
+    return map;
+  }, [cadastroData?.colaboradores]);
+
   const lancamentosRecentes = useMemo(() => {
     return [...lancamentos].sort((a, b) => {
       if (a.sheetRowNumber !== b.sheetRowNumber) {
@@ -208,7 +231,7 @@ export default function RelatorioPage() {
     return Array.from(map.values()).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [lancamentos]);
 
-  const cardClass = "bg-card rounded-lg border-[0.5px] border-border p-5";
+  const cardClass = "bg-card rounded-lg border-[0.5px] border-border p-4 sm:p-5";
   const metricClass = "rounded-lg bg-metric p-4";
 
   if (isLoading) {
@@ -244,7 +267,7 @@ export default function RelatorioPage() {
 
   return (
     <div>
-      <div className="mb-6 rounded-xl border border-border bg-card p-5">
+      <div className="mb-6 rounded-xl border border-border bg-card p-4 sm:p-5">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 className="text-xl font-semibold text-foreground">Relatórios e resultados</h2>
@@ -265,7 +288,7 @@ export default function RelatorioPage() {
         <div>
           <h3 className="text-base font-semibold text-foreground">Filtros</h3>
         </div>
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex gap-1 flex-wrap">
             <button
               key="todos"
@@ -297,7 +320,7 @@ export default function RelatorioPage() {
           <select
             value={anoSelecionado}
             onChange={(e) => setAnoSelecionado(Number(e.target.value))}
-            className="px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
+            className="px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none w-full sm:w-auto"
           >
             {anosDisponiveis.map((ano) => (
               <option key={ano} value={ano}>
@@ -308,7 +331,7 @@ export default function RelatorioPage() {
           <select
             value={gestorFiltro}
             onChange={(e) => setGestorFiltro(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
+            className="px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none w-full sm:w-auto"
           >
             <option value="">Todos os gestores</option>
             {gestoresOptions.map((g) => (
@@ -379,27 +402,29 @@ export default function RelatorioPage() {
 
         <div className={cardClass}>
           <h3 className="text-sm font-semibold text-foreground mb-4">Distribuição de horas por evento</h3>
-          <div className="flex items-center">
-            <ResponsiveContainer width="55%" height={250}>
-              <PieChart>
-                <Pie
-                  data={horasPorEvento}
-                  dataKey="horas"
-                  nameKey="nome"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={90}
-                  paddingAngle={3}
-                >
-                  {horasPorEvento.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => [`${value}h`, "Horas"]} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex-1 space-y-3 pl-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="w-full sm:w-[55%] h-[220px] sm:h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={horasPorEvento}
+                    dataKey="horas"
+                    nameKey="nome"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={90}
+                    paddingAngle={3}
+                  >
+                    {horasPorEvento.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => [`${value}h`, "Horas"]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex-1 space-y-3 sm:pl-4">
               {horasPorEvento.map((ev, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span
@@ -425,14 +450,14 @@ export default function RelatorioPage() {
             placeholder="Pesquisar funcionário..."
             value={buscaColaborador}
             onChange={(e) => setBuscaColaborador(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
+            className="w-full sm:max-w-xs px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
           />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                {["Funcionário", "Regime", "Horas totais", "Detalhes"].map((h) => (
+                {["Funcionário", "Regime", "Status", "Horas totais", "Detalhes"].map((h) => (
                   <th key={h} className="py-2 px-3 text-xs font-medium text-muted-foreground">
                     {h}
                   </th>
@@ -445,6 +470,9 @@ export default function RelatorioPage() {
                   <td className="py-2.5 px-3 font-medium">{item.nome}</td>
                   <td className="py-2.5 px-3">
                     <Badge regime={item.regime} />
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <StatusBadge status={statusByColabId.get(item.id)} />
                   </td>
                   <td className="py-2.5 px-3">
                     {item.horas.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}h
@@ -463,7 +491,7 @@ export default function RelatorioPage() {
               ))}
               {horasPorColabFiltrada.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
                     Nenhuma hora extra encontrada para os filtros selecionados.
                   </td>
                 </tr>
@@ -534,9 +562,7 @@ export default function RelatorioPage() {
           <div className="mx-auto mt-8 w-full max-w-5xl rounded-xl border border-border bg-card p-5 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  Lançamentos de {colaboradorDetalhe.nome}
-                </h3>
+                <h3 className="text-base font-semibold text-foreground">Lançamentos de {colaboradorDetalhe.nome}</h3>
                 <p className="text-xs text-muted-foreground">
                   {lancamentosDoColaborador.length} lançamento(s) no período selecionado.
                 </p>

@@ -21,6 +21,7 @@ export interface Colaborador {
   salario: number;
   valorHora?: number;
   gestorId: string;
+  status?: string;
 }
 
 export interface Lancamento {

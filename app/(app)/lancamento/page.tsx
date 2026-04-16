@@ -18,6 +18,25 @@ function Badge({ regime }: { regime: string }) {
   );
 }
 
+function StatusBadge({ status }: { status?: string }) {
+  const value = (status || "").trim();
+  if (!value) return null;
+  const lowered = value.toLowerCase().replaceAll("não", "nao");
+  const inactive =
+    lowered.startsWith("nao") ||
+    lowered.includes("inativo") ||
+    lowered.includes("deslig") ||
+    lowered.includes("afast");
+  const active = !inactive && lowered.includes("ativo");
+  const cls = active
+    ? "bg-[#E2EFDA] text-[#27500A]"
+    : inactive
+      ? "bg-[#F8D7DA] text-[#842029]"
+      : "bg-[#F1F3F5] text-[#495057]";
+  const label = active ? "Ativo" : inactive ? "Não ativo" : value;
+  return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+}
+
 function FeriadoNacionalBadge({ nome }: { nome: string }) {
   return (
     <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FAEEDA] text-[#633806]">
@@ -228,7 +247,7 @@ export default function LancamentoPage() {
 
       <div className={`${cardClass} mb-4`}>
         <h3 className="text-sm font-semibold text-foreground mb-4">Identificação</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Gestor responsável</label>
             <select
@@ -271,13 +290,14 @@ export default function LancamentoPage() {
             <span className="font-medium">{colabSelecionado.nome}</span>
             <span className="text-muted-foreground">{colabSelecionado.cargo}</span>
             <Badge regime={colabSelecionado.regime} />
+            <StatusBadge status={colabSelecionado.status} />
           </div>
         )}
       </div>
 
       <div className={`${cardClass} mb-6`}>
         <h3 className="text-sm font-semibold text-foreground mb-4">Dados do evento</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Evento</label>
             <select
@@ -356,7 +376,7 @@ export default function LancamentoPage() {
         )}
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-col sm:flex-row">
         <button
           onClick={limpar}
           className="px-5 py-2.5 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
