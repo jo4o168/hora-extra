@@ -5,6 +5,7 @@ import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import type { Session } from "next-auth";
 import { useState } from "react";
+import AccessEnforcer from "./AccessEnforcer";
 import InactivityLogout from "./InactivityLogout";
 
 export function Providers({
@@ -20,6 +21,7 @@ export function Providers({
     <SessionProvider session={session}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
         <QueryClientProvider client={queryClient}>
+          <AccessEnforcer />
           <InactivityLogout />
           {children}
         </QueryClientProvider>
