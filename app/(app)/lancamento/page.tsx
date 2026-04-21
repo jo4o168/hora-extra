@@ -45,6 +45,13 @@ function FeriadoNacionalBadge({ nome }: { nome: string }) {
   );
 }
 
+function isWeekendDate(ymd: string): boolean {
+  const d = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
 export default function LancamentoPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -118,6 +125,8 @@ export default function LancamentoPage() {
 
   const feriadoInfo = useMemo(() => getFeriadoNacionalInfo(data), [data]);
   const feriado = feriadoInfo.isFeriado;
+  const fimDeSemana = useMemo(() => isWeekendDate(data), [data]);
+  const exigeFolgaDiaPJ = Boolean(colabSelecionado?.regime === "PJ" && (feriado || fimDeSemana));
 
   const horas = useMemo(
     () => calcHorasEntreHorarios(horaInicio, horaFim),
@@ -136,9 +145,9 @@ export default function LancamentoPage() {
           colaboradorId,
           eventoId,
           data,
-          horaInicio,
-          horaFim,
-          horas,
+          horaInicio: exigeFolgaDiaPJ ? "" : horaInicio,
+          horaFim: exigeFolgaDiaPJ ? "" : horaFim,
+          horas: exigeFolgaDiaPJ ? 0 : horas,
         }),
       });
       if (!r.ok) {
@@ -160,8 +169,8 @@ export default function LancamentoPage() {
   }
 
   async function handleSalvar() {
-    if (!gestorId || !colaboradorId || !eventoId || !data || !horaInicio || !horaFim) return;
-    if (horas <= 0) return;
+    if (!gestorId || !colaboradorId || !eventoId || !data) return;
+    if (!exigeFolgaDiaPJ && (!horaInicio || !horaFim || horas <= 0)) return;
     if (!cadastroDisponivel) return;
 
     const colab = colaboradores.find((c) => c.id === colaboradorId);
@@ -197,9 +206,7 @@ export default function LancamentoPage() {
     colaboradorId &&
     eventoId &&
     data &&
-    horaInicio &&
-    horaFim &&
-    horas > 0;
+    (exigeFolgaDiaPJ || (horaInicio && horaFim && horas > 0));
 
   return (
     <div className="max-w-3xl">
@@ -334,27 +341,40 @@ export default function LancamentoPage() {
               <p className="mt-2 text-xs text-muted-foreground">Não é feriado nacional nesta data.</p>
             )}
           </div>
-          <div>
-            <label className={labelClass}>Horário inicial</label>
-            <input
-              type="time"
-              className={selectClass}
-              value={horaInicio}
-              onChange={(e) => setHoraInicio(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Horário final</label>
-            <input
-              type="time"
-              className={selectClass}
-              value={horaFim}
-              onChange={(e) => setHoraFim(e.target.value)}
-            />
-          </div>
+          {!exigeFolgaDiaPJ && (
+            <>
+              <div>
+                <label className={labelClass}>Horário inicial</label>
+                <input
+                  type="time"
+                  className={selectClass}
+                  value={horaInicio}
+                  onChange={(e) => setHoraInicio(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Horário final</label>
+                <input
+                  type="time"
+                  className={selectClass}
+                  value={horaFim}
+                  onChange={(e) => setHoraFim(e.target.value)}
+                />
+              </div>
+            </>
+          )}
         </div>
 
-        {horaInicio && horaFim && (
+        {exigeFolgaDiaPJ && (
+          <p className="mt-4 text-sm text-foreground">
+            <span className="font-semibold">Regra PJ aplicada:</span>{" "}
+            <span className="text-muted-foreground">
+              nesta data (fim de semana/feriado), não é necessário informar horas; será lançado 1 dia em Dias de
+              Folga (PJ).
+            </span>
+          </p>
+        )}
+        {!exigeFolgaDiaPJ && horaInicio && horaFim && (
           <p className="mt-4 text-sm text-foreground">
             <span className="text-muted-foreground">Total calculado:</span>{" "}
             <span className="font-semibold">
