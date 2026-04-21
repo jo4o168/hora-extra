@@ -137,7 +137,11 @@ export function rowToLancamentoRow(
   let feriado = false;
   let valor = 0;
   let valorHora = 0;
-  let jaFoiPago = false;
+  let valorAPagar = 0;
+  let valorAbatido = 0;
+  let bancoHoras = 0;
+  let horasAbatidas = 0;
+  let diasFolgaPJ = 0;
 
   if (m) {
     // Novo layout (aba Horas Extras)
@@ -184,7 +188,13 @@ export function rowToLancamentoRow(
     if (valor <= 0) {
       valor = parseNumberBr(getCell(m, cells, ["valor", "valor_total", "total"]));
     }
-    jaFoiPago = parseBooleanSimNao(getCell(m, cells, ["ja_foi_pago", "já_foi_pago", "pago", "status_pagamento"]));
+    valorAPagar = parseNumberBr(getCell(m, cells, ["valor_a_pagar", "valor a pagar", "valora_pagar"]));
+    valorAbatido = parseNumberBr(getCell(m, cells, ["valor_abatido", "valor abatido", "valorabatido"]));
+    diasFolgaPJ = parseNumberBr(
+      getCell(m, cells, ["dias_de_folga_pj", "dias de folga (pj)", "dias_folga", "folga_pj"]),
+    );
+    bancoHoras = parseHoras(getCell(m, cells, ["banco_de_horas", "banco de horas", "banco_horas"]));
+    horasAbatidas = parseHoras(getCell(m, cells, ["horas_abatidas", "horas abatidas", "horasabatidas"]));
   } else {
     gestorNome = cells[0] ?? "";
     colaboradorNome = cells[1] ?? "";
@@ -200,7 +210,11 @@ export function rowToLancamentoRow(
     feriado = f === "sim" || f === "true";
     valor = cells.length > 12 ? parseNumberBr(cells[12]) : 0;
     valorHora = cells.length > 11 ? parseNumberBr(cells[11]) : 0;
-    jaFoiPago = parseBooleanSimNao(cells[16] ?? "");
+    valorAPagar = cells.length > 12 ? parseNumberBr(cells[12]) : 0;
+    valorAbatido = cells.length > 13 ? parseNumberBr(cells[13]) : 0;
+    bancoHoras = cells.length > 14 ? parseHoras(cells[14]) : 0;
+    horasAbatidas = cells.length > 15 ? parseHoras(cells[15]) : 0;
+    diasFolgaPJ = cells.length > 16 ? parseNumberBr(cells[16]) : 0;
     horaInicio = cells[3] ?? "";
     horaFim = cells[4] ?? "";
   }
@@ -218,7 +232,9 @@ export function rowToLancamentoRow(
   const gestorNomeFinal = gestorMatch?.nome || gestorNome;
   const eventoNomeFinal = eventoMatch?.nome || eventoNome;
 
-  if (!colaboradorNomeFinal || !data || horas <= 0) return null;
+  const possuiHorasOuFolga =
+    horas > 0 || Math.abs(diasFolgaPJ) > 0 || valorAbatido > 0 || horasAbatidas > 0;
+  if (!colaboradorNomeFinal || !data || !possuiHorasOuFolga) return null;
 
   const regimeFinal = colabMatch?.regime ?? regime;
   let valorFinal = valor;
@@ -245,7 +261,11 @@ export function rowToLancamentoRow(
     colaboradorNome: colaboradorNomeFinal,
     eventoNome: eventoNomeFinal || "—",
     regime: regimeFinal,
-    jaFoiPago,
+    valorAPagar,
+    valorAbatido,
+    bancoHoras,
+    horasAbatidas,
+    diasFolgaPJ,
     status: colabMatch?.status,
     sheetRowNumber,
   };

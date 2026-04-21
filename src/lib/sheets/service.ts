@@ -74,7 +74,88 @@ function colorForPagamento(pago: boolean) {
   };
 }
 
-async function resolvePagamentoColumnInfo() {
+function colorForLancamento() {
+  return {
+    red: 0.886,
+    green: 0.937,
+    blue: 0.855,
+  };
+}
+
+function colorForAbatimento() {
+  return {
+    red: 0.984,
+    green: 0.905,
+    blue: 0.855,
+  };
+}
+
+function isWeekendDate(ymd: string): boolean {
+  const d = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  const day = d.getDay();
+  return day === 0 || day === 6;
+}
+
+function decimalHoursToDuration(value: number): string {
+  const totalMinutes = Math.round(Math.abs(value) * 60);
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`;
+}
+
+const APPEND_RETRY_ATTEMPTS = 4;
+const APPEND_RETRY_DELAY_MS = 140;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveNextFreeLancamentoRow(params: {
+  sheets: NonNullable<ReturnType<typeof getSheetsClient>>;
+  spreadsheetId: string;
+  sheetName: string;
+  startCol: string;
+  firstDataRow: number;
+}): Promise<number> {
+  const { sheets, spreadsheetId, sheetName, startCol, firstDataRow } = params;
+  const keyColumnRange = `'${sheetName}'!${startCol}${firstDataRow}:${startCol}5000`;
+  const keyColumnRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: keyColumnRange,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  const keyValues = keyColumnRes.data.values ?? [];
+  let targetRow = firstDataRow;
+  for (let i = 0; i < keyValues.length; i++) {
+    const cell = keyValues[i]?.[0];
+    if (!cell || !String(cell).trim()) {
+      targetRow = firstDataRow + i;
+      break;
+    }
+    targetRow = firstDataRow + i + 1;
+  }
+  return targetRow;
+}
+
+async function isLancamentoRowAvailable(params: {
+  sheets: NonNullable<ReturnType<typeof getSheetsClient>>;
+  spreadsheetId: string;
+  sheetName: string;
+  targetRow: number;
+}): Promise<boolean> {
+  const { sheets, spreadsheetId, sheetName, targetRow } = params;
+  const readRes = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${sheetName}'!A${targetRow}:A${targetRow}`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+
+  const cell = readRes.data.values?.[0]?.[0];
+  return !cell || !String(cell).trim();
+}
+
+async function resolveLancamentosColumnsInfo() {
   const sheets = getSheetsClient();
   const spreadsheetId = lancamentosSpreadsheetId();
   const readRange = lancamentosReadRange();
@@ -90,17 +171,27 @@ async function resolvePagamentoColumnInfo() {
     valueRenderOption: "FORMATTED_VALUE",
   });
   const headers = (headerRes.data.values?.[0] ?? []).map((h) => normalizeHeader(String(h || "")));
-  const aliases = new Set(["ja_foi_pago", "jafoipago", "pago", "status_pagamento"]);
+  const valorPagoAliases = new Set(["valor_pago", "valor pago", "valorpago"]);
+  const feriadoAliases = new Set(["feriado_nacional", "feriado_nacional_", "feriado nacional"]);
 
-  let paidOffset = headers.findIndex((h) => aliases.has(h));
-  if (paidOffset < 0) {
-    // fallback para layout atual: coluna Q (17ª a partir de A)
-    paidOffset = columnLetterToIndex("Q") - columnLetterToIndex(parsed.startCol);
+  let valorPagoOffset = headers.findIndex((h) => valorPagoAliases.has(h));
+  if (valorPagoOffset < 0) {
+    // fallback para layout novo: coluna M
+    valorPagoOffset = columnLetterToIndex("M") - columnLetterToIndex(parsed.startCol);
+  }
+  let feriadoOffset = headers.findIndex((h) => feriadoAliases.has(h));
+  if (feriadoOffset < 0) {
+    // fallback para layout novo: coluna P
+    feriadoOffset = columnLetterToIndex("P") - columnLetterToIndex(parsed.startCol);
   }
 
-  const paidColumnIndex = columnLetterToIndex(parsed.startCol) + paidOffset;
-  const paidColumnLetter = columnIndexToLetter(paidColumnIndex);
-  return { sheetName: parsed.sheetName, paidColumnLetter };
+  const valorPagoColumnIndex = columnLetterToIndex(parsed.startCol) + valorPagoOffset;
+  const feriadoColumnIndex = columnLetterToIndex(parsed.startCol) + feriadoOffset;
+  return {
+    sheetName: parsed.sheetName,
+    valorPagoColumnLetter: columnIndexToLetter(valorPagoColumnIndex),
+    feriadoColumnLetter: columnIndexToLetter(feriadoColumnIndex),
+  };
 }
 
 export function isSheetsWriteConfigured(): boolean {
@@ -169,68 +260,137 @@ export async function appendLancamento(
 
   const parsed = parseAppendRange(range);
   const firstDataRow = parsed.startRow + 1; // linha após o cabeçalho
-
-  // Define a primeira linha livre pela coluna A (Colaborador_id), evitando pular para linhas altas
-  // quando há fórmulas pré-preenchidas em outras colunas.
-  const keyColumnRange = `'${parsed.sheetName}'!${parsed.startCol}${firstDataRow}:${parsed.startCol}5000`;
-  const keyColumnRes = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: keyColumnRange,
-    valueRenderOption: "FORMATTED_VALUE",
-  });
-  const keyValues = keyColumnRes.data.values ?? [];
-  let targetRow = firstDataRow;
-  for (let i = 0; i < keyValues.length; i++) {
-    const cell = keyValues[i]?.[0];
-    if (!cell || !String(cell).trim()) {
-      targetRow = firstDataRow + i;
-      break;
-    }
-    targetRow = firstDataRow + i + 1;
-  }
+  const shouldAddFolgaDia = colab.regime === "PJ" && (input.feriado || isWeekendDate(input.data));
+  const expected = {
+    nomeColaborador: colab.nome,
+    gestorId: g.id,
+    regime: colab.regime,
+    horaInicio: input.horaInicio,
+    horaFim: input.horaFim,
+    data: input.data,
+    eventoId: ev.id,
+    salario,
+    feriado: input.feriado ? "Sim" : "Não",
+  };
 
   // Importante: escreve somente colunas de entrada manual para não apagar fórmulas.
   // Layout atual:
   // A Colaborador | B Gestor_id | C PJ/CLT | D Entrada | E Saída | F (fórmula)
-  // G Data | H Evento_id | I..P (fórmulas/derivações, exceto K salário manual)
-  // Q Já foi Pago? | R Feriado Nacional?
-  const updateRes = await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: [
-        {
-          range: `'${parsed.sheetName}'!A${targetRow}:E${targetRow}`,
-          values: [[colab.nome, g.id, colab.regime, input.horaInicio, input.horaFim]],
-        },
-        {
-          range: `'${parsed.sheetName}'!G${targetRow}:H${targetRow}`,
-          values: [[input.data, ev.id]],
-        },
-        {
-          range: `'${parsed.sheetName}'!K${targetRow}:K${targetRow}`,
-          values: [[salario]],
-        },
-        {
-          range: `'${parsed.sheetName}'!Q${targetRow}:Q${targetRow}`,
-          values: [["Não"]],
-        },
-        {
-          range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
-          values: [[input.feriado ? "Sim" : "Não"]],
-        },
-      ],
-    },
-  });
-  await updateLancamentoPagamento({ sheetRowNumber: targetRow, pago: false }).catch(() => {
-    // formatação visual é complementar; falha aqui não deve impedir o lançamento
-  });
+  // G Data | H Evento_id | I..R (fórmulas/derivações, exceto K salário manual)
+  // N Valor abatido | P Horas abatidas | Q Dias de Folga (PJ) | R Feriado Nacional?
+  for (let attempt = 1; attempt <= APPEND_RETRY_ATTEMPTS; attempt++) {
+    const targetRow = await resolveNextFreeLancamentoRow({
+      sheets,
+      spreadsheetId,
+      sheetName: parsed.sheetName,
+      startCol: parsed.startCol,
+      firstDataRow,
+    });
+    const rowAvailable = await isLancamentoRowAvailable({
+      sheets,
+      spreadsheetId,
+      sheetName: parsed.sheetName,
+      targetRow,
+    });
+    if (!rowAvailable) {
+      if (attempt < APPEND_RETRY_ATTEMPTS) {
+        await sleep(APPEND_RETRY_DELAY_MS * attempt);
+        continue;
+      }
+      throw new Error(
+        "Não foi possível concluir o lançamento por concorrência na planilha. Tente novamente em alguns segundos.",
+      );
+    }
 
-  return {
-    ok: true,
-    mode: "sheet",
-    updatedRange: updateRes.data.responses?.[0]?.updatedRange,
-  };
+    const updateRes = await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: [
+          {
+            range: `'${parsed.sheetName}'!A${targetRow}:E${targetRow}`,
+            values: [[expected.nomeColaborador, expected.gestorId, expected.regime, expected.horaInicio, expected.horaFim]],
+          },
+          {
+            range: `'${parsed.sheetName}'!G${targetRow}:H${targetRow}`,
+            values: [[expected.data, expected.eventoId]],
+          },
+          {
+            range: `'${parsed.sheetName}'!K${targetRow}:K${targetRow}`,
+            values: [[expected.salario]],
+          },
+          {
+            range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
+            values: [[expected.feriado]],
+          },
+        ],
+      },
+    });
+
+    if (shouldAddFolgaDia) {
+      const folgaRange = `'${parsed.sheetName}'!Q${targetRow}:Q${targetRow}`;
+      const folgaAtualRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: folgaRange,
+        valueRenderOption: "FORMATTED_VALUE",
+      });
+      const folgaAtualRaw = folgaAtualRes.data.values?.[0]?.[0];
+      const folgaAtual = Number(String(folgaAtualRaw ?? "0").replace(",", "."));
+      const proximaFolga = (Number.isFinite(folgaAtual) ? folgaAtual : 0) + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: folgaRange,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [[String(proximaFolga)]],
+        },
+      });
+    }
+
+    const metaRes = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [`'${parsed.sheetName}'!A${targetRow}:R${targetRow}`],
+      includeGridData: false,
+    });
+    const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
+    if (typeof sheetId === "number") {
+      const bg = colorForLancamento();
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              repeatCell: {
+                range: {
+                  sheetId,
+                  startRowIndex: targetRow - 1,
+                  endRowIndex: targetRow,
+                  startColumnIndex: 0,
+                  endColumnIndex: 18,
+                },
+                cell: {
+                  userEnteredFormat: {
+                    backgroundColor: bg,
+                  },
+                },
+                fields: "userEnteredFormat.backgroundColor",
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    return {
+      ok: true,
+      mode: "sheet",
+      updatedRange: updateRes.data.responses?.[0]?.updatedRange,
+    };
+  }
+
+  throw new Error(
+    "Não foi possível concluir o lançamento por concorrência na planilha. Tente novamente em alguns segundos.",
+  );
 }
 
 export async function updateLancamento(
@@ -284,71 +444,146 @@ export async function updateLancamento(
   return { ok: true, mode: "sheet" };
 }
 
-export async function updateLancamentoPagamento(input: {
-  sheetRowNumber: number;
-  pago: boolean;
+export async function updateLancamentoAbatimento(input: {
+  tipo: "clt" | "pj_horas" | "pj_dias";
+  gestorId: string;
+  colaboradorId: string;
+  eventoId: string;
+  valorAbatido?: number;
+  horasAbatidas?: number;
+  diasAbatidos?: number;
 }): Promise<{ ok: boolean; mode: "sheet" }> {
   if (!isSheetsWriteConfigured()) {
     throw new Error("Google Sheets de lançamentos não está configurado para gravação.");
   }
-
+  const valorAbatidoNum = Math.abs(Number(input.valorAbatido || 0));
+  const horasAbatidasNum = Math.abs(Number(input.horasAbatidas || 0));
+  const diasAbatidosNum = Math.abs(Number(input.diasAbatidos || 0));
+  if (valorAbatidoNum <= 0 && horasAbatidasNum <= 0 && diasAbatidosNum <= 0) {
+    throw new Error("Informe valor, horas e/ou dias para abatimento.");
+  }
   const sheets = getSheetsClient();
   const spreadsheetId = lancamentosSpreadsheetId();
-  if (!sheets || !spreadsheetId) {
+  const range = lancamentosAppendRange();
+  if (!sheets || !spreadsheetId || !range) {
     throw new Error("Cliente do Google Sheets indisponível para gravação.");
   }
-
-  const { sheetName, paidColumnLetter } = await resolvePagamentoColumnInfo();
-  const paidValue = input.pago ? "Sim" : "Não";
-  const cellRange = `'${sheetName}'!${paidColumnLetter}${input.sheetRowNumber}:${paidColumnLetter}${input.sheetRowNumber}`;
-
-  await sheets.spreadsheets.values.update({
+  const cadastro = await loadCadastroFromSheets();
+  const colab = cadastro.colaboradores.find((c) => c.id === input.colaboradorId);
+  if (!colab) {
+    throw new Error("Colaborador inválido para abatimento.");
+  }
+  if (input.tipo === "clt" && colab.regime !== "CLT") {
+    throw new Error("Abatimento monetário é permitido somente para CLT.");
+  }
+  if ((input.tipo === "pj_horas" || input.tipo === "pj_dias") && colab.regime !== "PJ") {
+    throw new Error("Abatimento de PJ permitido somente para colaboradores PJ.");
+  }
+  const parsed = parseAppendRange(range);
+  const firstDataRow = parsed.startRow + 1;
+  const targetRow = await resolveNextFreeLancamentoRow({
+    sheets,
     spreadsheetId,
-    range: cellRange,
-    valueInputOption: "USER_ENTERED",
+    sheetName: parsed.sheetName,
+    startCol: parsed.startCol,
+    firstDataRow,
+  });
+  const hoje = new Date();
+  const dataAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  const salario = String(colab.salario || colab.valorHora || 0);
+  const valorAbatido = valorAbatidoNum > 0 ? valorAbatidoNum : "";
+  const horasAbatidas = horasAbatidasNum > 0 ? decimalHoursToDuration(horasAbatidasNum) : "";
+  const diasFolgaAjuste = input.tipo === "pj_dias" && diasAbatidosNum > 0 ? -diasAbatidosNum : "";
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
     requestBody: {
-      values: [[paidValue]],
+      valueInputOption: "USER_ENTERED",
+      data: [
+        {
+          range: `'${parsed.sheetName}'!A${targetRow}:C${targetRow}`,
+          values: [[colab.nome, input.gestorId, "CLT"]],
+        },
+        {
+          range: `'${parsed.sheetName}'!G${targetRow}:H${targetRow}`,
+          values: [[dataAtual, input.eventoId]],
+        },
+        {
+          range: `'${parsed.sheetName}'!K${targetRow}:K${targetRow}`,
+          values: [[salario]],
+        },
+        {
+          range: `'${parsed.sheetName}'!N${targetRow}:N${targetRow}`,
+          values: [[valorAbatido]],
+        },
+        {
+          range: `'${parsed.sheetName}'!P${targetRow}:P${targetRow}`,
+          values: [[horasAbatidas]],
+        },
+        {
+          range: `'${parsed.sheetName}'!Q${targetRow}:Q${targetRow}`,
+          values: [[diasFolgaAjuste]],
+        },
+      ],
     },
   });
 
   const metaRes = await sheets.spreadsheets.get({
     spreadsheetId,
-    ranges: [cellRange],
+    ranges: [`'${parsed.sheetName}'!A${targetRow}:R${targetRow}`],
     includeGridData: false,
   });
   const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
   if (typeof sheetId === "number") {
-    const colIndex = columnLetterToIndex(paidColumnLetter) - 1;
-    const bg = colorForPagamento(input.pago);
+    const bg = colorForAbatimento();
+    const requests: Array<Record<string, unknown>> = [
+      {
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: targetRow - 1,
+            endRowIndex: targetRow,
+            startColumnIndex: 0,
+            endColumnIndex: 18,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: bg,
+            },
+          },
+          fields: "userEnteredFormat.backgroundColor",
+        },
+      },
+    ];
+    if (horasAbatidas) {
+      // Garante exibição como duração (não horário do dia), evitando 24h -> 00h
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: targetRow - 1,
+            endRowIndex: targetRow,
+            startColumnIndex: 15, // coluna P (Horas abatidas)
+            endColumnIndex: 16,
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: "NUMBER",
+                pattern: "[h]:mm:ss",
+              },
+            },
+          },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      });
+    }
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
-        requests: [
-          {
-            repeatCell: {
-              range: {
-                sheetId,
-                startRowIndex: input.sheetRowNumber - 1,
-                endRowIndex: input.sheetRowNumber,
-                startColumnIndex: colIndex,
-                endColumnIndex: colIndex + 1,
-              },
-              cell: {
-                userEnteredFormat: {
-                  backgroundColor: bg,
-                  textFormat: {
-                    bold: true,
-                    foregroundColor: { red: 0.2, green: 0.2, blue: 0.2 },
-                  },
-                },
-              },
-              fields: "userEnteredFormat(backgroundColor,textFormat)",
-            },
-          },
-        ],
+        requests,
       },
     });
   }
-
   return { ok: true, mode: "sheet" };
 }
