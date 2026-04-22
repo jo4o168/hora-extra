@@ -62,7 +62,7 @@ export default function LoginPage() {
         </section>
 
         <section className="lg:pr-8 order-2 lg:order-1 lg:self-center">
-          <p className="inline-flex items-center rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground">
+          <p className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
             Plataforma interna
           </p>
           <h1 className="mt-4 text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
