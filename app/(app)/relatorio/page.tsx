@@ -122,7 +122,7 @@ export default function RelatorioPage() {
     eventoId: string;
     saldoDias: number;
   } | null>(null);
-  const [pjDiasAbatimentoQuantidade, setPjDiasAbatimentoQuantidade] = useState("");
+  const [pjDiasAbatimentoDataFolga, setPjDiasAbatimentoDataFolga] = useState("");
   const [colaboradorFolgaDetalheId, setColaboradorFolgaDetalheId] = useState<string | null>(null);
   const [outrosDetalheAberto, setOutrosDetalheAberto] = useState(false);
   const [paginaHorasColabCLT, setPaginaHorasColabCLT] = useState(1);
@@ -500,7 +500,7 @@ export default function RelatorioPage() {
       colaboradorId: string;
       gestorId: string;
       eventoId: string;
-      diasAbatidos: number;
+      diaFolgaPJ: string;
     }) => {
       const r = await fetch("/api/lancamentos", {
         method: "PATCH",
@@ -517,7 +517,7 @@ export default function RelatorioPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["lancamentos"] });
       setPjDiasAbatimentoModal(null);
-      setPjDiasAbatimentoQuantidade("");
+      setPjDiasAbatimentoDataFolga("");
     },
   });
 
@@ -1052,15 +1052,16 @@ export default function RelatorioPage() {
                     {isAdmin ? (
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setPjDiasAbatimentoDataFolga("");
                           setPjDiasAbatimentoModal({
                             colaboradorId: item.id,
                             nome: item.nome,
                             gestorId: item.gestorId,
                             eventoId: item.eventoId,
                             saldoDias: item.dias,
-                          })
-                        }
+                          });
+                        }}
                         className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
                         title="Abater dias de folga"
                       >
@@ -1127,7 +1128,7 @@ export default function RelatorioPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                {["Tipo", "Colaborador", "Regime", "Evento", "Data", "Horas/Dia", "Valor", "Feriado", "Gestor"].map(
+                {["Tipo", "Colaborador", "Regime", "Evento", "Data", "Dia de Folga (PJ)", "Horas/Dia", "Valor", "Feriado", "Gestor"].map(
                   (h) => (
                     <th key={h} className="py-2 px-3 text-xs font-medium text-muted-foreground">
                       {h}
@@ -1166,6 +1167,9 @@ export default function RelatorioPage() {
                     {new Date(l.data + "T12:00:00").toLocaleDateString("pt-BR")}
                   </td>
                   <td className="py-2.5 px-3 first:rounded-l-xl last:rounded-r-xl">
+                    {l.diaFolgaPJ ? new Date(l.diaFolgaPJ + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                  </td>
+                  <td className="py-2.5 px-3 first:rounded-l-xl last:rounded-r-xl">
                     {(l.diasFolgaPJ || 0) !== 0
                       ? `${(l.diasFolgaPJ || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} Dia(s)`
                       : (l.horasAbatidas || 0) > 0
@@ -1197,7 +1201,7 @@ export default function RelatorioPage() {
               ))}
               {lancamentosRecentesPaginados.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={10} className="py-8 text-center text-muted-foreground">
                     Nenhum lançamento encontrado para os filtros selecionados.
                   </td>
                 </tr>
@@ -1584,7 +1588,10 @@ export default function RelatorioPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setPjDiasAbatimentoModal(null)}
+                onClick={() => {
+                  setPjDiasAbatimentoModal(null);
+                  setPjDiasAbatimentoDataFolga("");
+                }}
                 className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
               >
                 Fechar
@@ -1592,39 +1599,41 @@ export default function RelatorioPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">Dias a abater</label>
+                <label className="mb-1 block text-sm font-medium text-foreground">Dia de folga (PJ)</label>
                 <input
-                  type="text"
-                  value={pjDiasAbatimentoQuantidade}
-                  onChange={(e) => setPjDiasAbatimentoQuantidade(e.target.value.replace(/\D/g, ""))}
-                  placeholder="Ex.: 1"
+                  type="date"
+                  value={pjDiasAbatimentoDataFolga}
+                  onChange={(e) => setPjDiasAbatimentoDataFolga(e.target.value)}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cada abatimento desconta automaticamente 1 dia.
+                </p>
               </div>
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={() => {
-                    const dias = Number(pjDiasAbatimentoQuantidade.trim() || "0");
-                    if (!Number.isFinite(dias) || dias <= 0 || !Number.isInteger(dias)) {
-                      window.alert("Informe uma quantidade inteira de dias válida.");
+                    const diaFolgaPJ = pjDiasAbatimentoDataFolga.trim();
+                    if (!diaFolgaPJ || !/^\d{4}-\d{2}-\d{2}$/.test(diaFolgaPJ)) {
+                      window.alert("Informe uma data válida para o Dia de Folga (PJ).");
                       return;
                     }
-                    if (dias > pjDiasAbatimentoModal.saldoDias + 0.0001) {
-                      window.alert("Os dias abatidos não podem ser maiores que o saldo disponível.");
+                    if (pjDiasAbatimentoModal.saldoDias < 1) {
+                      window.alert("Saldo de folga insuficiente para abatimento.");
                       return;
                     }
                     const confirmed = window.confirm(
-                      `Tem certeza que deseja abater ${dias.toLocaleString("pt-BR", {
-                        maximumFractionDigits: 2,
-                      })} dia(s) deste colaborador?`,
+                      `Tem certeza que deseja abater 1 dia deste colaborador para uso em ${new Date(
+                        diaFolgaPJ + "T12:00:00",
+                      ).toLocaleDateString("pt-BR")}?`,
                     );
                     if (!confirmed) return;
                     abatimentoPjDiasMutation.mutate({
                       colaboradorId: pjDiasAbatimentoModal.colaboradorId,
                       gestorId: pjDiasAbatimentoModal.gestorId,
                       eventoId: pjDiasAbatimentoModal.eventoId,
-                      diasAbatidos: dias,
+                      diaFolgaPJ,
                     });
                   }}
                   disabled={abatimentoPjDiasMutation.isPending}

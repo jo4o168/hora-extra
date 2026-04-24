@@ -277,7 +277,7 @@ export async function appendLancamento(
   // Layout atual:
   // A Colaborador | B Gestor_id | C PJ/CLT | D Entrada | E Saída | F (fórmula)
   // G Data | H Evento_id | I..R (fórmulas/derivações, exceto K salário manual)
-  // N Valor abatido | P Horas abatidas | Q Dias de Folga (PJ) | R Feriado Nacional?
+  // N Valor abatido | P Horas abatidas | Q Dias de Folga (PJ) | R Abatimento Dia de Folga(PJ) | S Feriado Nacional?
   for (let attempt = 1; attempt <= APPEND_RETRY_ATTEMPTS; attempt++) {
     const targetRow = await resolveNextFreeLancamentoRow({
       sheets,
@@ -320,7 +320,7 @@ export async function appendLancamento(
             values: [[expected.salario]],
           },
           {
-            range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
+            range: `'${parsed.sheetName}'!S${targetRow}:S${targetRow}`,
             values: [[expected.feriado]],
           },
         ],
@@ -349,7 +349,7 @@ export async function appendLancamento(
 
     const metaRes = await sheets.spreadsheets.get({
       spreadsheetId,
-      ranges: [`'${parsed.sheetName}'!A${targetRow}:R${targetRow}`],
+      ranges: [`'${parsed.sheetName}'!A${targetRow}:S${targetRow}`],
       includeGridData: false,
     });
     const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
@@ -366,7 +366,7 @@ export async function appendLancamento(
                   startRowIndex: targetRow - 1,
                   endRowIndex: targetRow,
                   startColumnIndex: 0,
-                  endColumnIndex: 18,
+                  endColumnIndex: 19,
                 },
                 cell: {
                   userEnteredFormat: {
@@ -434,7 +434,7 @@ export async function updateLancamento(
           values: [[salario]],
         },
         {
-          range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
+          range: `'${parsed.sheetName}'!S${targetRow}:S${targetRow}`,
           values: [[input.feriado ? "Sim" : "Não"]],
         },
       ],
@@ -452,6 +452,7 @@ export async function updateLancamentoAbatimento(input: {
   valorAbatido?: number;
   horasAbatidas?: number;
   diasAbatidos?: number;
+  diaFolgaPJ?: string;
 }): Promise<{ ok: boolean; mode: "sheet" }> {
   if (!isSheetsWriteConfigured()) {
     throw new Error("Google Sheets de lançamentos não está configurado para gravação.");
@@ -479,6 +480,9 @@ export async function updateLancamentoAbatimento(input: {
   if ((input.tipo === "pj_horas" || input.tipo === "pj_dias") && colab.regime !== "PJ") {
     throw new Error("Abatimento de PJ permitido somente para colaboradores PJ.");
   }
+  if (input.tipo === "pj_dias" && !input.diaFolgaPJ) {
+    throw new Error("Informe o dia de folga (PJ) para o abatimento.");
+  }
   const parsed = parseAppendRange(range);
   const firstDataRow = parsed.startRow + 1;
   const targetRow = await resolveNextFreeLancamentoRow({
@@ -494,6 +498,7 @@ export async function updateLancamentoAbatimento(input: {
   const valorAbatido = valorAbatidoNum > 0 ? valorAbatidoNum : "";
   const horasAbatidas = horasAbatidasNum > 0 ? decimalHoursToDuration(horasAbatidasNum) : "";
   const diasFolgaAjuste = input.tipo === "pj_dias" && diasAbatidosNum > 0 ? -diasAbatidosNum : "";
+  const diaFolgaPJ = input.tipo === "pj_dias" ? input.diaFolgaPJ || "" : "";
 
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
@@ -524,13 +529,17 @@ export async function updateLancamentoAbatimento(input: {
           range: `'${parsed.sheetName}'!Q${targetRow}:Q${targetRow}`,
           values: [[diasFolgaAjuste]],
         },
+        {
+          range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
+          values: [[diaFolgaPJ]],
+        },
       ],
     },
   });
 
   const metaRes = await sheets.spreadsheets.get({
     spreadsheetId,
-    ranges: [`'${parsed.sheetName}'!A${targetRow}:R${targetRow}`],
+    ranges: [`'${parsed.sheetName}'!A${targetRow}:S${targetRow}`],
     includeGridData: false,
   });
   const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
@@ -544,7 +553,7 @@ export async function updateLancamentoAbatimento(input: {
             startRowIndex: targetRow - 1,
             endRowIndex: targetRow,
             startColumnIndex: 0,
-            endColumnIndex: 18,
+            endColumnIndex: 19,
           },
           cell: {
             userEnteredFormat: {

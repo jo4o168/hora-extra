@@ -78,11 +78,41 @@ export async function fetchRange(spreadsheetId: string, range: string): Promise<
   if (!sheets) return [];
   const normalizedRange = normalizeA1Range(range);
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: normalizedRange,
-    valueRenderOption: "FORMATTED_VALUE",
-  });
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: normalizedRange,
+      valueRenderOption: "FORMATTED_VALUE",
+    });
+  } catch (error) {
+    const e = error as {
+      message?: string;
+      code?: number;
+      response?: {
+        status?: number;
+        data?: {
+          error?: {
+            code?: number;
+            message?: string;
+            status?: string;
+            errors?: Array<{ reason?: string; message?: string }>;
+          };
+        };
+      };
+    };
+    const googleErr = e.response?.data?.error;
+    console.error("[sheets] Falha ao ler intervalo:", {
+      spreadsheetId,
+      range: normalizedRange,
+      serviceAccountEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      status: e.response?.status ?? e.code,
+      message: googleErr?.message ?? e.message,
+      reason: googleErr?.errors?.[0]?.reason,
+      statusText: googleErr?.status,
+    });
+    throw error;
+  }
 
   const values = res.data.values;
   if (!values?.length) return [];
