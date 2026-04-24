@@ -156,6 +156,7 @@ export async function PATCH(request: Request) {
         valorAbatido?: number;
         horasAbatidas?: number;
         diasAbatidos?: number;
+        diaFolgaPJ?: string;
       }
     | { sheetRowNumber?: number; valorPago?: number };
   try {
@@ -184,7 +185,7 @@ export async function PATCH(request: Request) {
       }
       const valorAbatido = Number(body.valorAbatido || 0);
       const horasAbatidas = Number(body.horasAbatidas || 0);
-      const diasAbatidos = Number(body.diasAbatidos || 0);
+      const diasAbatidos = body.tipo === "pj_dias" ? 1 : Number(body.diasAbatidos || 0);
       if (
         (body.valorAbatido !== undefined && (!Number.isFinite(valorAbatido) || valorAbatido < 0)) ||
         (body.horasAbatidas !== undefined && (!Number.isFinite(horasAbatidas) || horasAbatidas < 0)) ||
@@ -201,6 +202,12 @@ export async function PATCH(request: Request) {
       if (body.tipo === "pj_dias" && (diasAbatidos <= 0 || !Number.isInteger(diasAbatidos))) {
         return NextResponse.json({ error: "Abatimento de dias PJ deve ser inteiro." }, { status: 400 });
       }
+      if (body.tipo === "pj_dias") {
+        const diaFolga = (body.diaFolgaPJ || "").trim();
+        if (!diaFolga || !/^\d{4}-\d{2}-\d{2}$/.test(diaFolga)) {
+          return NextResponse.json({ error: "Informe uma data válida para o Dia de Folga (PJ)." }, { status: 400 });
+        }
+      }
       result = await updateLancamentoAbatimento({
         tipo: body.tipo,
         gestorId: body.gestorId,
@@ -209,6 +216,7 @@ export async function PATCH(request: Request) {
         valorAbatido,
         horasAbatidas,
         diasAbatidos,
+        diaFolgaPJ: body.tipo === "pj_dias" ? body.diaFolgaPJ : undefined,
       });
       const comprovanteEmail = session.user?.email?.trim();
       if (comprovanteEmail) {
@@ -227,6 +235,7 @@ export async function PATCH(request: Request) {
             valorAbatido,
             horasAbatidas,
             diasAbatidos,
+            diaFolgaPJ: body.tipo === "pj_dias" ? body.diaFolgaPJ : undefined,
             registradoPorEmail: session.user?.email,
           }).catch(() => undefined);
         }

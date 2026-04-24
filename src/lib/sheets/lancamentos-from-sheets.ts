@@ -37,6 +37,21 @@ function getCell(
   return "";
 }
 
+function getCellExact(
+  m: Record<string, number>,
+  cells: string[],
+  aliases: string[],
+): string {
+  for (const a of aliases) {
+    const na = normalizeHeader(a);
+    if (na in m) {
+      const v = cells[m[na]];
+      return v != null ? String(v).trim() : "";
+    }
+  }
+  return "";
+}
+
 function parseHoras(raw: string): number {
   const value = (raw || "").trim();
   if (!value) return 0;
@@ -142,6 +157,7 @@ export function rowToLancamentoRow(
   let bancoHoras = 0;
   let horasAbatidas = 0;
   let diasFolgaPJ = 0;
+  let diaFolgaPJ = "";
 
   if (m) {
     // Novo layout (aba Horas Extras)
@@ -193,6 +209,17 @@ export function rowToLancamentoRow(
     diasFolgaPJ = parseNumberBr(
       getCell(m, cells, ["dias_de_folga_pj", "dias de folga (pj)", "dias_folga", "folga_pj"]),
     );
+    diaFolgaPJ = normalizeDateYmd(
+      getCellExact(m, cells, [
+        "abatimento_dia_de_folga_pj",
+        "abatimento_dia_de_folgapj",
+        "dia_de_folga_pj",
+        "dia_de_folgapj",
+        "abatimento dia de folga(pj)",
+        "dia de folga(pj)",
+        "dia de folga (pj)",
+      ]),
+    );
     bancoHoras = parseHoras(getCell(m, cells, ["banco_de_horas", "banco de horas", "banco_horas"]));
     horasAbatidas = parseHoras(getCell(m, cells, ["horas_abatidas", "horas abatidas", "horasabatidas"]));
   } else {
@@ -215,6 +242,7 @@ export function rowToLancamentoRow(
     bancoHoras = cells.length > 14 ? parseHoras(cells[14]) : 0;
     horasAbatidas = cells.length > 15 ? parseHoras(cells[15]) : 0;
     diasFolgaPJ = cells.length > 16 ? parseNumberBr(cells[16]) : 0;
+    diaFolgaPJ = cells.length > 17 ? normalizeDateYmd(cells[17] ?? "") : "";
     horaInicio = cells[3] ?? "";
     horaFim = cells[4] ?? "";
   }
@@ -266,6 +294,7 @@ export function rowToLancamentoRow(
     bancoHoras,
     horasAbatidas,
     diasFolgaPJ,
+    diaFolgaPJ,
     status: colabMatch?.status,
     sheetRowNumber,
   };

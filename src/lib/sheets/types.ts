@@ -13,6 +13,7 @@ export type LancamentoRow = Lancamento & {
   bancoHoras: number;
   horasAbatidas: number;
   diasFolgaPJ: number;
+  diaFolgaPJ?: string;
   status?: string;
   sheetRowNumber: number;
 };

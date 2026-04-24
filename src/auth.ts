@@ -18,6 +18,13 @@ function resolveAuthSecret(): string {
   console.warn(
     "[auth] AUTH_SECRET não definido — usando segredo fixo só para desenvolvimento. Crie .env.local com AUTH_SECRET=... (ex.: openssl rand -base64 32)",
   );
+  console.warn("[auth] Diagnóstico env:", {
+    hasAuthSecret: Boolean((process.env.AUTH_SECRET ?? "").trim()),
+    hasNextAuthSecret: Boolean((process.env.NEXTAUTH_SECRET ?? "").trim()),
+    hasGoogleClientId: Boolean((process.env.AUTH_GOOGLE_ID ?? "").trim()),
+    hasGoogleClientSecret: Boolean((process.env.AUTH_GOOGLE_SECRET ?? "").trim()),
+    nodeEnv: process.env.NODE_ENV,
+  });
   return "hora-extra-dev-only-secret-not-for-production";
 }
 
@@ -51,7 +58,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return "/acesso-negado?motivo=permissao";
         }
         return true;
-      } catch {
+      } catch (error) {
+        console.error("[auth] Falha ao validar acesso no signIn:", error);
         return "/acesso-negado?motivo=configuracao";
       }
     },
