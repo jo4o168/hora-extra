@@ -132,6 +132,7 @@ type AbatimentoReceiptPayload = {
   horasAbatidas?: number;
   diasAbatidos?: number;
   diaFolgaPJ?: string;
+  observacao?: string;
   registradoPorEmail?: string | null;
 };
 
@@ -154,6 +155,9 @@ export async function sendAbatimentoReceiptEmail(payload: AbatimentoReceiptPaylo
   }
   if (payload.diaFolgaPJ) {
     partes.push(`Dia de folga (PJ): ${payload.diaFolgaPJ}`);
+  }
+  if (payload.observacao?.trim()) {
+    partes.push(`Observação: ${payload.observacao.trim()}`);
   }
 
   const tipoPerfil = (payload.diasAbatidos || 0) > 0 ? "PJ" : "CLT/PJ";

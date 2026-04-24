@@ -157,6 +157,7 @@ export async function PATCH(request: Request) {
         horasAbatidas?: number;
         diasAbatidos?: number;
         diaFolgaPJ?: string;
+        observacao?: string;
       }
     | { sheetRowNumber?: number; valorPago?: number };
   try {
@@ -217,6 +218,7 @@ export async function PATCH(request: Request) {
         horasAbatidas,
         diasAbatidos,
         diaFolgaPJ: body.tipo === "pj_dias" ? body.diaFolgaPJ : undefined,
+        observacao: typeof body.observacao === "string" ? body.observacao : undefined,
       });
       const comprovanteEmail = session.user?.email?.trim();
       if (comprovanteEmail) {
@@ -236,6 +238,7 @@ export async function PATCH(request: Request) {
             horasAbatidas,
             diasAbatidos,
             diaFolgaPJ: body.tipo === "pj_dias" ? body.diaFolgaPJ : undefined,
+            observacao: typeof body.observacao === "string" ? body.observacao.trim() : undefined,
             registradoPorEmail: session.user?.email,
           }).catch(() => undefined);
         }

@@ -106,6 +106,7 @@ export default function RelatorioPage() {
   const [cltAbatimentoValor, setCltAbatimentoValor] = useState("");
   const [cltAbatimentoHoras, setCltAbatimentoHoras] = useState("");
   const [cltAbatimentoMinutos, setCltAbatimentoMinutos] = useState("");
+  const [cltAbatimentoObservacao, setCltAbatimentoObservacao] = useState("");
   const [pjHorasAbatimentoModal, setPjHorasAbatimentoModal] = useState<{
     colaboradorId: string;
     nome: string;
@@ -115,6 +116,7 @@ export default function RelatorioPage() {
   } | null>(null);
   const [pjHorasAbatimentoHoras, setPjHorasAbatimentoHoras] = useState("");
   const [pjHorasAbatimentoMinutos, setPjHorasAbatimentoMinutos] = useState("");
+  const [pjHorasAbatimentoObservacao, setPjHorasAbatimentoObservacao] = useState("");
   const [pjDiasAbatimentoModal, setPjDiasAbatimentoModal] = useState<{
     colaboradorId: string;
     nome: string;
@@ -123,6 +125,7 @@ export default function RelatorioPage() {
     saldoDias: number;
   } | null>(null);
   const [pjDiasAbatimentoDataFolga, setPjDiasAbatimentoDataFolga] = useState("");
+  const [pjDiasAbatimentoObservacao, setPjDiasAbatimentoObservacao] = useState("");
   const [colaboradorFolgaDetalheId, setColaboradorFolgaDetalheId] = useState<string | null>(null);
   const [outrosDetalheAberto, setOutrosDetalheAberto] = useState(false);
   const [paginaHorasColabCLT, setPaginaHorasColabCLT] = useState(1);
@@ -448,6 +451,7 @@ export default function RelatorioPage() {
       eventoId: string;
       valorAbatido?: number;
       horasAbatidas?: number;
+      observacao?: string;
     }) => {
       const r = await fetch("/api/lancamentos", {
         method: "PATCH",
@@ -467,6 +471,7 @@ export default function RelatorioPage() {
       setCltAbatimentoValor("");
       setCltAbatimentoHoras("");
       setCltAbatimentoMinutos("");
+      setCltAbatimentoObservacao("");
     },
   });
   const abatimentoPjHorasMutation = useMutation({
@@ -475,6 +480,7 @@ export default function RelatorioPage() {
       gestorId: string;
       eventoId: string;
       horasAbatidas: number;
+      observacao?: string;
     }) => {
       const r = await fetch("/api/lancamentos", {
         method: "PATCH",
@@ -493,6 +499,7 @@ export default function RelatorioPage() {
       setPjHorasAbatimentoModal(null);
       setPjHorasAbatimentoHoras("");
       setPjHorasAbatimentoMinutos("");
+      setPjHorasAbatimentoObservacao("");
     },
   });
   const abatimentoPjDiasMutation = useMutation({
@@ -501,6 +508,7 @@ export default function RelatorioPage() {
       gestorId: string;
       eventoId: string;
       diaFolgaPJ: string;
+      observacao?: string;
     }) => {
       const r = await fetch("/api/lancamentos", {
         method: "PATCH",
@@ -518,6 +526,7 @@ export default function RelatorioPage() {
       await queryClient.invalidateQueries({ queryKey: ["lancamentos"] });
       setPjDiasAbatimentoModal(null);
       setPjDiasAbatimentoDataFolga("");
+      setPjDiasAbatimentoObservacao("");
     },
   });
 
@@ -843,6 +852,7 @@ export default function RelatorioPage() {
                           saldoHoras: item.horas,
                           saldoValor: item.valorAPagar,
                         });
+                          setCltAbatimentoObservacao("");
                       }}
                       className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
                       title="Abater lançamentos"
@@ -952,6 +962,7 @@ export default function RelatorioPage() {
                             eventoId: meta.eventoId,
                             saldoHoras: item.horas,
                           });
+                          setPjHorasAbatimentoObservacao("");
                         })()
                       }
                       className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
@@ -1054,6 +1065,7 @@ export default function RelatorioPage() {
                         type="button"
                         onClick={() => {
                           setPjDiasAbatimentoDataFolga("");
+                          setPjDiasAbatimentoObservacao("");
                           setPjDiasAbatimentoModal({
                             colaboradorId: item.id,
                             nome: item.nome,
@@ -1395,6 +1407,16 @@ export default function RelatorioPage() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Observação</label>
+                <textarea
+                  value={cltAbatimentoObservacao}
+                  onChange={(e) => setCltAbatimentoObservacao(e.target.value)}
+                  placeholder="Motivo do abatimento"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  rows={3}
+                />
+              </div>
               <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                 Prévia:{" "}
                 {(() => {
@@ -1462,12 +1484,14 @@ export default function RelatorioPage() {
                       `Tem certeza que deseja lançar este abatimento?\n${partesPreview.join("\n")}`,
                     );
                     if (!confirmed) return;
+                    const observacao = cltAbatimentoObservacao.trim();
                     abatimentoCltMutation.mutate({
                       colaboradorId: cltAbatimentoModal.colaboradorId,
                       gestorId: cltAbatimentoModal.gestorId,
                       eventoId: cltAbatimentoModal.eventoId,
                       ...(valorAbatido > 0 ? { valorAbatido } : {}),
                       ...(horasAbatidas > 0 ? { horasAbatidas } : {}),
+                      ...(observacao ? { observacao } : {}),
                     });
                   }}
                   disabled={abatimentoCltMutation.isPending}
@@ -1528,6 +1552,16 @@ export default function RelatorioPage() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Observação</label>
+                <textarea
+                  value={pjHorasAbatimentoObservacao}
+                  onChange={(e) => setPjHorasAbatimentoObservacao(e.target.value)}
+                  placeholder="Motivo do abatimento"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  rows={3}
+                />
+              </div>
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -1551,11 +1585,13 @@ export default function RelatorioPage() {
                       `Tem certeza que deseja abater ${formatHoras(horasAbatidas)} deste colaborador?`,
                     );
                     if (!confirmed) return;
+                    const observacao = pjHorasAbatimentoObservacao.trim();
                     abatimentoPjHorasMutation.mutate({
                       colaboradorId: pjHorasAbatimentoModal.colaboradorId,
                       gestorId: pjHorasAbatimentoModal.gestorId,
                       eventoId: pjHorasAbatimentoModal.eventoId,
                       horasAbatidas,
+                      ...(observacao ? { observacao } : {}),
                     });
                   }}
                   disabled={abatimentoPjHorasMutation.isPending}
@@ -1610,6 +1646,16 @@ export default function RelatorioPage() {
                   Cada abatimento desconta automaticamente 1 dia.
                 </p>
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Observação</label>
+                <textarea
+                  value={pjDiasAbatimentoObservacao}
+                  onChange={(e) => setPjDiasAbatimentoObservacao(e.target.value)}
+                  placeholder="Motivo do abatimento"
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  rows={3}
+                />
+              </div>
               <div className="flex justify-end">
                 <button
                   type="button"
@@ -1629,11 +1675,13 @@ export default function RelatorioPage() {
                       ).toLocaleDateString("pt-BR")}?`,
                     );
                     if (!confirmed) return;
+                    const observacao = pjDiasAbatimentoObservacao.trim();
                     abatimentoPjDiasMutation.mutate({
                       colaboradorId: pjDiasAbatimentoModal.colaboradorId,
                       gestorId: pjDiasAbatimentoModal.gestorId,
                       eventoId: pjDiasAbatimentoModal.eventoId,
                       diaFolgaPJ,
+                      ...(observacao ? { observacao } : {}),
                     });
                   }}
                   disabled={abatimentoPjDiasMutation.isPending}

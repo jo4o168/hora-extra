@@ -453,6 +453,7 @@ export async function updateLancamentoAbatimento(input: {
   horasAbatidas?: number;
   diasAbatidos?: number;
   diaFolgaPJ?: string;
+  observacao?: string;
 }): Promise<{ ok: boolean; mode: "sheet" }> {
   if (!isSheetsWriteConfigured()) {
     throw new Error("Google Sheets de lançamentos não está configurado para gravação.");
@@ -499,6 +500,7 @@ export async function updateLancamentoAbatimento(input: {
   const horasAbatidas = horasAbatidasNum > 0 ? decimalHoursToDuration(horasAbatidasNum) : "";
   const diasFolgaAjuste = input.tipo === "pj_dias" && diasAbatidosNum > 0 ? -diasAbatidosNum : "";
   const diaFolgaPJ = input.tipo === "pj_dias" ? input.diaFolgaPJ || "" : "";
+  const observacao = (input.observacao || "").trim();
 
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
@@ -533,13 +535,17 @@ export async function updateLancamentoAbatimento(input: {
           range: `'${parsed.sheetName}'!R${targetRow}:R${targetRow}`,
           values: [[diaFolgaPJ]],
         },
+        {
+          range: `'${parsed.sheetName}'!T${targetRow}:T${targetRow}`,
+          values: [[observacao]],
+        },
       ],
     },
   });
 
   const metaRes = await sheets.spreadsheets.get({
     spreadsheetId,
-    ranges: [`'${parsed.sheetName}'!A${targetRow}:S${targetRow}`],
+    ranges: [`'${parsed.sheetName}'!A${targetRow}:T${targetRow}`],
     includeGridData: false,
   });
   const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
@@ -553,7 +559,7 @@ export async function updateLancamentoAbatimento(input: {
             startRowIndex: targetRow - 1,
             endRowIndex: targetRow,
             startColumnIndex: 0,
-            endColumnIndex: 19,
+            endColumnIndex: 20,
           },
           cell: {
             userEnteredFormat: {
