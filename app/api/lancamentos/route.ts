@@ -176,26 +176,13 @@ export async function PATCH(request: Request) {
     if (!access.isAdmin && !access.allowedGestorIds.length) {
       return NextResponse.json({ error: "Usuário sem permissão de gestor" }, { status: 403 });
     }
+    if (!access.isAdmin) {
+      return NextResponse.json({ error: "Somente administradores podem realizar abatimentos" }, { status: 403 });
+    }
     let result;
     if ("tipo" in body && (body.tipo === "clt" || body.tipo === "pj_horas" || body.tipo === "pj_dias")) {
       if (!body.gestorId || !body.colaboradorId || !body.eventoId) {
         return NextResponse.json({ error: "Dados obrigatórios do abatimento ausentes" }, { status: 400 });
-      }
-      const colab = cadastro.colaboradores.find((c) => c.id === body.colaboradorId);
-      if (!colab) {
-        return NextResponse.json({ error: "Colaborador inválido para abatimento" }, { status: 400 });
-      }
-      if (colab.gestorId !== body.gestorId) {
-        return NextResponse.json({ error: "Colaborador não pertence ao gestor informado" }, { status: 403 });
-      }
-      if (!access.isAdmin && !access.allowedGestorIds.includes(body.gestorId)) {
-        return NextResponse.json({ error: "Sem permissão para este gestor" }, { status: 403 });
-      }
-      if (body.tipo === "clt" && !access.isAdmin) {
-        return NextResponse.json({ error: "Somente administradores podem realizar abatimentos CLT" }, { status: 403 });
-      }
-      if ((body.tipo === "pj_horas" || body.tipo === "pj_dias") && colab.regime !== "PJ") {
-        return NextResponse.json({ error: "Abatimento PJ permitido somente para colaboradores PJ" }, { status: 400 });
       }
       const valorAbatido = Number(body.valorAbatido || 0);
       const horasAbatidas = Number(body.horasAbatidas || 0);
@@ -209,6 +196,9 @@ export async function PATCH(request: Request) {
       }
       if (valorAbatido <= 0 && horasAbatidas <= 0 && diasAbatidos <= 0) {
         return NextResponse.json({ error: "Informe valor e/ou horas e/ou dias para abatimento" }, { status: 400 });
+      }
+      if (!access.isAdmin && !access.allowedGestorIds.includes(body.gestorId)) {
+        return NextResponse.json({ error: "Sem permissão para este gestor" }, { status: 403 });
       }
       if (body.tipo === "pj_dias" && (diasAbatidos <= 0 || !Number.isInteger(diasAbatidos))) {
         return NextResponse.json({ error: "Abatimento de dias PJ deve ser inteiro." }, { status: 400 });
