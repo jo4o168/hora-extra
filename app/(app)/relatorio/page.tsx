@@ -1060,26 +1060,24 @@ export default function RelatorioPage() {
                     {item.dias.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} dia(s)
                   </td>
                   <td className="py-2.5 px-3">
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPjDiasAbatimentoDataFolga("");
-                          setPjDiasAbatimentoObservacao("");
-                          setPjDiasAbatimentoModal({
-                            colaboradorId: item.id,
-                            nome: item.nome,
-                            gestorId: item.gestorId,
-                            eventoId: item.eventoId,
-                            saldoDias: item.dias,
-                          });
-                        }}
-                        className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-                        title="Abater dias de folga"
-                      >
-                        Abater
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPjDiasAbatimentoDataFolga("");
+                        setPjDiasAbatimentoObservacao("");
+                        setPjDiasAbatimentoModal({
+                          colaboradorId: item.id,
+                          nome: item.nome,
+                          gestorId: item.gestorId,
+                          eventoId: item.eventoId,
+                          saldoDias: item.dias,
+                        });
+                      }}
+                      className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                      title="Abater dias de folga"
+                    >
+                      Abater
+                    </button>
                   </td>
                 </tr>
               ))}
