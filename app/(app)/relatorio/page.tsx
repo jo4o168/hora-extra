@@ -897,7 +897,7 @@ export default function RelatorioPage() {
         </div>
       </div>}
 
-      <div className={`${cardClass} mb-6`}>
+      {isAdmin && <div className={`${cardClass} mb-6`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Horas em aberto por funcionário (PJ)</h3>
           <div className="flex items-center gap-2">
@@ -1006,7 +1006,7 @@ export default function RelatorioPage() {
             </button>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className={`${cardClass} mb-6`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1060,24 +1060,26 @@ export default function RelatorioPage() {
                     {item.dias.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} dia(s)
                   </td>
                   <td className="py-2.5 px-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPjDiasAbatimentoDataFolga("");
-                        setPjDiasAbatimentoObservacao("");
-                        setPjDiasAbatimentoModal({
-                          colaboradorId: item.id,
-                          nome: item.nome,
-                          gestorId: item.gestorId,
-                          eventoId: item.eventoId,
-                          saldoDias: item.dias,
-                        });
-                      }}
-                      className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-                      title="Abater dias de folga"
-                    >
-                      Abater
-                    </button>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPjDiasAbatimentoDataFolga("");
+                          setPjDiasAbatimentoObservacao("");
+                          setPjDiasAbatimentoModal({
+                            colaboradorId: item.id,
+                            nome: item.nome,
+                            gestorId: item.gestorId,
+                            eventoId: item.eventoId,
+                            saldoDias: item.dias,
+                          });
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                        title="Abater dias de folga"
+                      >
+                        Abater
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
