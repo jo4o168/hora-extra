@@ -5,6 +5,8 @@ import type { CadastroResponse, LancamentoRow, NovoLancamentoInput } from "./typ
 
 export type { CadastroResponse, LancamentoRow, NovoLancamentoInput } from "./types";
 
+export const HORA_NEGATIVA_OBS_PREFIX = "[Hora negativa]";
+
 function lancamentosSpreadsheetId(): string {
   return (
     process.env.GOOGLE_SHEETS_LANCAMENTOS_SPREADSHEET_ID ||
@@ -601,4 +603,178 @@ export async function updateLancamentoAbatimento(input: {
     });
   }
   return { ok: true, mode: "sheet" };
+}
+
+export type AppendHoraNegativaInput = {
+  gestorId: string;
+  colaboradorId: string;
+  data: string;
+  horas: number;
+  observacao?: string;
+  registradoPorEmail?: string | null;
+};
+
+export async function appendHoraNegativa(
+  input: AppendHoraNegativaInput,
+): Promise<{ ok: boolean; mode: "sheet"; eventoIdUsado: string }> {
+  if (!isSheetsWriteConfigured()) {
+    throw new Error("Google Sheets de lançamentos não está configurado para gravação.");
+  }
+  if (!isCadastroSheetsConfigured()) {
+    throw new Error("Google Sheets de cadastro não está configurado no ambiente.");
+  }
+  const horas = Math.abs(Number(input.horas || 0));
+  if (!Number.isFinite(horas) || horas <= 0) {
+    throw new Error("Informe um valor de horas válido (maior que zero).");
+  }
+  if (horas > 24) {
+    throw new Error("Hora negativa não pode ultrapassar 24 horas.");
+  }
+  if (!input.data || !/^\d{4}-\d{2}-\d{2}$/.test(input.data)) {
+    throw new Error("Informe uma data válida (YYYY-MM-DD).");
+  }
+
+  const cadastro = await loadCadastroFromSheets();
+  const gestor = cadastro.gestores.find((g) => g.id === input.gestorId);
+  if (!gestor) {
+    throw new Error("Gestor inválido.");
+  }
+  const colab = cadastro.colaboradores.find((c) => c.id === input.colaboradorId);
+  if (!colab) {
+    throw new Error("Colaborador inválido.");
+  }
+  if (colab.regime !== "CLT") {
+    throw new Error("Hora negativa só pode ser registrada para colaboradores CLT.");
+  }
+
+  // Cadeia de fallback do evento:
+  // 1) último lançamento do colaborador (se houver) → 2) primeiro evento do cadastro.
+  let eventoIdUsado = "";
+  try {
+    const lancList = await loadLancamentosFromSheets();
+    const ultimoDoColab = lancList
+      .filter((l) => l.colaboradorId === colab.id)
+      .sort((a, b) => b.sheetRowNumber - a.sheetRowNumber)[0];
+    if (ultimoDoColab?.eventoId) {
+      eventoIdUsado = ultimoDoColab.eventoId;
+    }
+  } catch {
+    // Se a leitura falhar, segue pra fallback do cadastro.
+  }
+  if (!eventoIdUsado) {
+    const primeiroEvento = cadastro.eventos[0];
+    if (!primeiroEvento) {
+      throw new Error("Nenhum evento cadastrado para usar como referência.");
+    }
+    eventoIdUsado = primeiroEvento.id;
+  }
+
+  const sheets = getSheetsClient();
+  const spreadsheetId = lancamentosSpreadsheetId();
+  const range = lancamentosAppendRange();
+  if (!sheets || !spreadsheetId || !range) {
+    throw new Error("Cliente do Google Sheets indisponível para gravação.");
+  }
+  const parsed = parseAppendRange(range);
+  const firstDataRow = parsed.startRow + 1;
+
+  const targetRow = await resolveNextFreeLancamentoRow({
+    sheets,
+    spreadsheetId,
+    sheetName: parsed.sheetName,
+    startCol: parsed.startCol,
+    firstDataRow,
+  });
+
+  const salario = String(colab.salario || colab.valorHora || 0);
+  const horasDuracao = decimalHoursToDuration(horas);
+  const observacaoLimpa = (input.observacao || "").trim();
+  const observacaoFinal = observacaoLimpa
+    ? `${HORA_NEGATIVA_OBS_PREFIX} ${observacaoLimpa}`
+    : HORA_NEGATIVA_OBS_PREFIX;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: [
+        {
+          range: `'${parsed.sheetName}'!A${targetRow}:C${targetRow}`,
+          values: [[colab.nome, gestor.id, "CLT"]],
+        },
+        {
+          range: `'${parsed.sheetName}'!G${targetRow}:H${targetRow}`,
+          values: [[input.data, eventoIdUsado]],
+        },
+        {
+          range: `'${parsed.sheetName}'!K${targetRow}:K${targetRow}`,
+          values: [[salario]],
+        },
+        {
+          range: `'${parsed.sheetName}'!P${targetRow}:P${targetRow}`,
+          values: [[horasDuracao]],
+        },
+        {
+          range: `'${parsed.sheetName}'!T${targetRow}:T${targetRow}`,
+          values: [[observacaoFinal]],
+        },
+      ],
+    },
+  });
+
+  const metaRes = await sheets.spreadsheets.get({
+    spreadsheetId,
+    ranges: [`'${parsed.sheetName}'!A${targetRow}:T${targetRow}`],
+    includeGridData: false,
+  });
+  const sheetId = metaRes.data.sheets?.[0]?.properties?.sheetId;
+  if (typeof sheetId === "number") {
+    const bg = colorForAbatimento();
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: targetRow - 1,
+                endRowIndex: targetRow,
+                startColumnIndex: 0,
+                endColumnIndex: 20,
+              },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: bg,
+                },
+              },
+              fields: "userEnteredFormat.backgroundColor",
+            },
+          },
+          {
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: targetRow - 1,
+                endRowIndex: targetRow,
+                startColumnIndex: 15,
+                endColumnIndex: 16,
+              },
+              cell: {
+                userEnteredFormat: {
+                  numberFormat: {
+                    type: "NUMBER",
+                    pattern: "[h]:mm:ss",
+                  },
+                },
+              },
+              fields: "userEnteredFormat.numberFormat",
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  return { ok: true, mode: "sheet", eventoIdUsado };
 }

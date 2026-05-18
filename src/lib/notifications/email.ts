@@ -184,3 +184,46 @@ export async function sendAbatimentoReceiptEmail(payload: AbatimentoReceiptPaylo
     html: `<div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5"><h2>Comprovante de abatimento</h2><p>${text.replace(/\n/g, "<br/>")}</p></div>`,
   });
 }
+
+type HoraNegativaReceiptPayload = {
+  to: string;
+  gestorNome: string;
+  colaboradorNome: string;
+  data: string;
+  horas: number;
+  observacao?: string;
+  registradoPorEmail?: string | null;
+};
+
+export async function sendHoraNegativaReceiptEmail(
+  payload: HoraNegativaReceiptPayload,
+): Promise<void> {
+  if (!isEmailNotificationsEnabled()) return;
+  const cfg = smtpConfig();
+  if (!cfg) return;
+  const tx = getTransporter();
+  if (!tx) return;
+
+  const subject = `[Hora Extra Certa] Hora negativa registrada (CLT) - ${payload.data}`;
+  const linhas = [
+    "Uma hora negativa foi registrada para o colaborador.",
+    "",
+    `Gestor: ${payload.gestorNome}`,
+    `Colaborador: ${payload.colaboradorNome}`,
+    `Data da folga: ${payload.data}`,
+    `Horas negativas: ${formatHoras(payload.horas)} (${payload.horas.toFixed(2)}h)`,
+    payload.observacao ? `Motivo: ${payload.observacao}` : undefined,
+    payload.registradoPorEmail ? `Registrado por: ${payload.registradoPorEmail}` : undefined,
+    "",
+    "Estas horas serão compensadas automaticamente em lançamentos futuros de horas extras.",
+  ].filter(Boolean) as string[];
+  const text = linhas.join("\n");
+
+  await tx.sendMail({
+    from: cfg.from,
+    to: payload.to,
+    subject,
+    text,
+    html: `<div style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.5"><h2>Hora negativa registrada</h2><p>${text.replace(/\n/g, "<br/>")}</p></div>`,
+  });
+}

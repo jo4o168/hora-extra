@@ -158,6 +158,7 @@ export function rowToLancamentoRow(
   let horasAbatidas = 0;
   let diasFolgaPJ = 0;
   let diaFolgaPJ = "";
+  let observacao = "";
 
   if (m) {
     // Novo layout (aba Horas Extras)
@@ -222,6 +223,13 @@ export function rowToLancamentoRow(
     );
     bancoHoras = parseHoras(getCell(m, cells, ["banco_de_horas", "banco de horas", "banco_horas"]));
     horasAbatidas = parseHoras(getCell(m, cells, ["horas_abatidas", "horas abatidas", "horasabatidas"]));
+    observacao = getCellExact(m, cells, [
+      "observacao",
+      "observação",
+      "obs",
+      "observacoes",
+      "observações",
+    ]);
   } else {
     gestorNome = cells[0] ?? "";
     colaboradorNome = cells[1] ?? "";
@@ -245,6 +253,7 @@ export function rowToLancamentoRow(
     diaFolgaPJ = cells.length > 17 ? normalizeDateYmd(cells[17] ?? "") : "";
     horaInicio = cells[3] ?? "";
     horaFim = cells[4] ?? "";
+    observacao = cells.length > 19 ? (cells[19] ?? "").trim() : "";
   }
 
   const colabMatch = findByIdOrName(cadastro.colaboradores, colaboradorId, colaboradorNome);
@@ -295,6 +304,7 @@ export function rowToLancamentoRow(
     horasAbatidas,
     diasFolgaPJ,
     diaFolgaPJ,
+    observacao: observacao || undefined,
     status: colabMatch?.status,
     sheetRowNumber,
   };
