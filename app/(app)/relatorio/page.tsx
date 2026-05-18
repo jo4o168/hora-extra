@@ -53,6 +53,12 @@ function isAbatimentoRow(l: LancamentoRow): boolean {
   return (l.valorAbatido || 0) > 0 || (l.horasAbatidas || 0) > 0 || (l.diasFolgaPJ || 0) < 0;
 }
 
+const HORA_NEGATIVA_OBS_PREFIX = "[Hora negativa]";
+
+function isHoraNegativaRow(l: LancamentoRow): boolean {
+  return (l.observacao || "").trim().startsWith(HORA_NEGATIVA_OBS_PREFIX);
+}
+
 function getHorasHighlightClass(horas: number): string {
   if (horas >= 40) return "bg-[#FF1744] text-white ring-2 ring-[#FF1744]/40";
   if (horas >= 30) return "bg-[#FFD600] text-[#4A3B00] ring-2 ring-[#FFD600]/45";
@@ -136,6 +142,16 @@ export default function RelatorioPage() {
   const [itensPorPaginaFolgasPJ, setItensPorPaginaFolgasPJ] = useState(10);
   const [paginaLancamentosRecentes, setPaginaLancamentosRecentes] = useState(1);
   const [itensPorPaginaLancamentosRecentes, setItensPorPaginaLancamentosRecentes] = useState(10);
+  const [buscaCompensar, setBuscaCompensar] = useState("");
+  const [paginaCompensar, setPaginaCompensar] = useState(1);
+  const [itensPorPaginaCompensar, setItensPorPaginaCompensar] = useState(10);
+  const [horaNegativaModalAberto, setHoraNegativaModalAberto] = useState(false);
+  const [horaNegativaGestorId, setHoraNegativaGestorId] = useState("");
+  const [horaNegativaColabId, setHoraNegativaColabId] = useState("");
+  const [horaNegativaData, setHoraNegativaData] = useState("");
+  const [horaNegativaHoras, setHoraNegativaHoras] = useState("");
+  const [horaNegativaMinutos, setHoraNegativaMinutos] = useState("");
+  const [horaNegativaObservacao, setHoraNegativaObservacao] = useState("");
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
@@ -219,6 +235,41 @@ export default function RelatorioPage() {
       saldoValor: roundMoney(Math.max(e.saldoValor, 0)) <= MONEY_EPSILON ? 0 : roundMoney(Math.max(e.saldoValor, 0)),
     }));
   }, [lancamentos]);
+
+  const horasACompensarPorColab = useMemo(() => {
+    const map = new Map<string, { id: string; nome: string; regime: string; saldoHoras: number }>();
+    lancamentos.forEach((l) => {
+      if (l.regime !== "CLT") return;
+      const entry = map.get(l.colaboradorId) || {
+        id: l.colaboradorId,
+        nome: l.colaboradorNome,
+        regime: l.regime,
+        saldoHoras: 0,
+      };
+      entry.saldoHoras += (l.bancoHoras || 0) - (l.horasAbatidas || 0);
+      map.set(l.colaboradorId, entry);
+    });
+    return Array.from(map.values())
+      .filter((e) => e.saldoHoras < -HOURS_EPSILON)
+      .map((e) => ({ ...e, horasNegativas: Math.abs(e.saldoHoras) }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [lancamentos]);
+
+  const horasACompensarFiltrada = useMemo(() => {
+    const termo = buscaCompensar.trim().toLowerCase();
+    if (!termo) return horasACompensarPorColab;
+    return horasACompensarPorColab.filter((item) => item.nome.toLowerCase().includes(termo));
+  }, [buscaCompensar, horasACompensarPorColab]);
+
+  const totalPaginasCompensar = Math.max(
+    1,
+    Math.ceil(horasACompensarFiltrada.length / Math.max(1, itensPorPaginaCompensar)),
+  );
+  const horasACompensarPaginada = useMemo(() => {
+    const start = (paginaCompensar - 1) * itensPorPaginaCompensar;
+    const end = start + itensPorPaginaCompensar;
+    return horasACompensarFiltrada.slice(start, end);
+  }, [horasACompensarFiltrada, paginaCompensar, itensPorPaginaCompensar]);
 
   const gestoresOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -414,6 +465,14 @@ export default function RelatorioPage() {
   useEffect(() => {
     setPaginaFolgasPJ(1);
   }, [buscaFolgaPJ, mesSelecionado, anoSelecionado, gestorFiltro]);
+  useEffect(() => {
+    setPaginaCompensar(1);
+  }, [buscaCompensar, mesSelecionado, anoSelecionado, gestorFiltro]);
+  useEffect(() => {
+    if (paginaCompensar > totalPaginasCompensar) {
+      setPaginaCompensar(totalPaginasCompensar);
+    }
+  }, [paginaCompensar, totalPaginasCompensar]);
 
   useEffect(() => {
     if (paginaHorasColabCLT > totalPaginasHorasColabCLT) {
@@ -529,6 +588,44 @@ export default function RelatorioPage() {
       setPjDiasAbatimentoObservacao("");
     },
   });
+  const horaNegativaMutation = useMutation({
+    mutationFn: async (payload: {
+      gestorId: string;
+      colaboradorId: string;
+      data: string;
+      horas: number;
+      observacao?: string;
+    }) => {
+      const r = await fetch("/api/horas-negativas", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error ?? "Falha ao registrar hora negativa");
+      }
+      return r.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["lancamentos"] });
+      setHoraNegativaModalAberto(false);
+      setHoraNegativaGestorId("");
+      setHoraNegativaColabId("");
+      setHoraNegativaData("");
+      setHoraNegativaHoras("");
+      setHoraNegativaMinutos("");
+      setHoraNegativaObservacao("");
+    },
+  });
+
+  const colabsCltElegiveis = useMemo(() => {
+    return (cadastroData?.colaboradores ?? [])
+      .filter((c) => c.regime === "CLT")
+      .filter((c) => !horaNegativaGestorId || c.gestorId === horaNegativaGestorId)
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [cadastroData?.colaboradores, horaNegativaGestorId]);
 
   const horasPorEvento = useMemo(() => {
     const map = new Map<string, { nome: string; horas: number }>();
@@ -899,6 +996,116 @@ export default function RelatorioPage() {
 
       {isAdmin && <div className={`${cardClass} mb-6`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Horas a compensar (CLT)</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Saldo de horas que o colaborador deve à empresa. Será compensado automaticamente em horas extras futuras.
+            </p>
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setHoraNegativaGestorId("");
+                setHoraNegativaColabId("");
+                setHoraNegativaData("");
+                setHoraNegativaHoras("");
+                setHoraNegativaMinutos("");
+                setHoraNegativaObservacao("");
+                setHoraNegativaModalAberto(true);
+              }}
+              className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              + Registrar hora negativa
+            </button>
+            <input
+              type="text"
+              placeholder="Pesquisar funcionário..."
+              value={buscaCompensar}
+              onChange={(e) => setBuscaCompensar(e.target.value)}
+              className="w-full sm:w-64 px-3 py-2 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
+            />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Itens/página</label>
+              <input
+                type="number"
+                min={1}
+                value={itensPorPaginaCompensar}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setItensPorPaginaCompensar(Number.isFinite(v) && v > 0 ? Math.floor(v) : 10);
+                  setPaginaCompensar(1);
+                }}
+                className="w-20 px-2 py-1.5 rounded-lg border border-border bg-card text-sm text-foreground focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                {["Funcionário", "Regime", "Status", "Horas a compensar"].map((h) => (
+                  <th key={h} className="py-2 px-3 text-xs font-medium text-muted-foreground">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {horasACompensarPaginada.map((item) => (
+                <tr key={`compensar-${item.id}`} className="border-b border-border last:border-0">
+                  <td className="py-2.5 px-3 font-medium">{item.nome}</td>
+                  <td className="py-2.5 px-3">
+                    <Badge regime={item.regime} />
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <StatusBadge status={statusByColabId.get(item.id)} />
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-[#FF1744] text-white ring-2 ring-[#FF1744]/40">
+                      −{formatHoras(item.horasNegativas)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {horasACompensarPaginada.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                    Nenhum colaborador com horas a compensar no período.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Página {paginaCompensar} de {totalPaginasCompensar} · {horasACompensarFiltrada.length} registro(s)
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPaginaCompensar((p) => Math.max(1, p - 1))}
+              disabled={paginaCompensar <= 1}
+              className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaginaCompensar((p) => Math.min(totalPaginasCompensar, p + 1))}
+              disabled={paginaCompensar >= totalPaginasCompensar}
+              className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      </div>}
+
+      {isAdmin && <div className={`${cardClass} mb-6`}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">Horas em aberto por funcionário (PJ)</h3>
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground">Itens/página</label>
@@ -1150,17 +1357,26 @@ export default function RelatorioPage() {
               </tr>
             </thead>
             <tbody>
-              {lancamentosRecentesPaginados.map((l) => (
+              {lancamentosRecentesPaginados.map((l) => {
+                const ehHoraNegativa = isHoraNegativaRow(l);
+                const ehAbatimento = isAbatimentoRow(l) && !ehHoraNegativa;
+                return (
                 <tr
                   key={l.id}
                   className={`border-b border-border last:border-0 ${
-                    isAbatimentoRow(l)
-                      ? "bg-[#FF3B3B]/20 hover:bg-[#FF3B3B]/28"
-                      : "bg-[#39FF14]/20 hover:bg-[#39FF14]/28"
+                    ehHoraNegativa
+                      ? "bg-[#3B82F6]/15 hover:bg-[#3B82F6]/24"
+                      : ehAbatimento
+                        ? "bg-[#FF3B3B]/20 hover:bg-[#FF3B3B]/28"
+                        : "bg-[#39FF14]/20 hover:bg-[#39FF14]/28"
                   }`}
                 >
                   <td className="py-2.5 px-3 first:rounded-l-xl last:rounded-r-xl">
-                    {isAbatimentoRow(l) ? (
+                    {ehHoraNegativa ? (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#E0E9FF] text-[#1E3A8A]">
+                        Hora negativa
+                      </span>
+                    ) : ehAbatimento ? (
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FCEBEC] text-[#8B2B33]">
                         Abatimento
                       </span>
@@ -1210,7 +1426,8 @@ export default function RelatorioPage() {
                     {l.gestorNome}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {lancamentosRecentesPaginados.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-muted-foreground">
@@ -1751,6 +1968,175 @@ export default function RelatorioPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {horaNegativaModalAberto && (
+        <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <div className="mx-auto mt-8 w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Registrar hora negativa (CLT)</h3>
+                <p className="text-xs text-muted-foreground">
+                  Cria um saldo negativo que será compensado automaticamente em horas extras futuras.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHoraNegativaModalAberto(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Gestor responsável</label>
+                  <select
+                    value={horaNegativaGestorId}
+                    onChange={(e) => {
+                      setHoraNegativaGestorId(e.target.value);
+                      setHoraNegativaColabId("");
+                    }}
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  >
+                    <option value="">Selecione...</option>
+                    {(cadastroData?.gestores ?? []).map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Colaborador (CLT)</label>
+                  <select
+                    value={horaNegativaColabId}
+                    onChange={(e) => setHoraNegativaColabId(e.target.value)}
+                    disabled={!horaNegativaGestorId}
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none disabled:opacity-60"
+                  >
+                    <option value="">Selecione...</option>
+                    {colabsCltElegiveis.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Data da folga</label>
+                  <input
+                    type="date"
+                    value={horaNegativaData}
+                    onChange={(e) => setHoraNegativaData(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-foreground">Horas a registrar</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={horaNegativaHoras}
+                      onChange={(e) => setHoraNegativaHoras(e.target.value.replace(/\D/g, ""))}
+                      placeholder="HH"
+                      className="w-24 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                    />
+                    <span className="text-sm text-muted-foreground">:</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={horaNegativaMinutos}
+                      onChange={(e) => setHoraNegativaMinutos(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                      placeholder="MM"
+                      maxLength={2}
+                      className="w-24 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Motivo / observação</label>
+                <textarea
+                  value={horaNegativaObservacao}
+                  onChange={(e) => setHoraNegativaObservacao(e.target.value)}
+                  placeholder="Ex.: Folga concedida pela empresa, atestado parcial, etc."
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none"
+                  rows={3}
+                />
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                Prévia:{" "}
+                {(() => {
+                  const hh = Number(horaNegativaHoras || "0");
+                  const mm = Number(horaNegativaMinutos || "0");
+                  const horas = Number.isFinite(hh) && Number.isFinite(mm) ? hh + mm / 60 : 0;
+                  if (horas <= 0) return "Informe as horas para visualizar a prévia.";
+                  const colab = colabsCltElegiveis.find((c) => c.id === horaNegativaColabId);
+                  const nome = colab?.nome || "Colaborador";
+                  return `${nome} ficará devendo ${formatHoras(horas)}.`;
+                })()}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!horaNegativaGestorId || !horaNegativaColabId || !horaNegativaData) {
+                      window.alert("Preencha gestor, colaborador e data.");
+                      return;
+                    }
+                    const hh = Number(horaNegativaHoras || "0");
+                    const mm = Number(horaNegativaMinutos || "0");
+                    if (!Number.isFinite(hh) || hh < 0 || !Number.isFinite(mm) || mm < 0 || mm > 59) {
+                      window.alert("Informe horas e minutos válidos.");
+                      return;
+                    }
+                    const horas = hh + mm / 60;
+                    if (horas <= 0) {
+                      window.alert("Informe um valor maior que zero para as horas.");
+                      return;
+                    }
+                    if (horas > 24) {
+                      window.alert("A hora negativa não pode ultrapassar 24 horas.");
+                      return;
+                    }
+                    const colab = colabsCltElegiveis.find((c) => c.id === horaNegativaColabId);
+                    if (!colab) {
+                      window.alert("Colaborador inválido.");
+                      return;
+                    }
+                    const confirmed = window.confirm(
+                      `Confirmar registro de ${formatHoras(horas)} negativas para ${colab.nome}?`,
+                    );
+                    if (!confirmed) return;
+                    const observacao = horaNegativaObservacao.trim();
+                    horaNegativaMutation.mutate({
+                      gestorId: horaNegativaGestorId,
+                      colaboradorId: horaNegativaColabId,
+                      data: horaNegativaData,
+                      horas,
+                      ...(observacao ? { observacao } : {}),
+                    });
+                  }}
+                  disabled={horaNegativaMutation.isPending}
+                  className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-60"
+                >
+                  {horaNegativaMutation.isPending ? "Registrando..." : "Registrar hora negativa"}
+                </button>
+              </div>
+              {horaNegativaMutation.isError && (
+                <p className="text-xs text-destructive">
+                  {horaNegativaMutation.error instanceof Error
+                    ? horaNegativaMutation.error.message
+                    : "Não foi possível registrar a hora negativa."}
+                </p>
+              )}
             </div>
           </div>
         </div>

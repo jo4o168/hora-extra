@@ -14,6 +14,7 @@ export type LancamentoRow = Lancamento & {
   horasAbatidas: number;
   diasFolgaPJ: number;
   diaFolgaPJ?: string;
+  observacao?: string;
   status?: string;
   sheetRowNumber: number;
 };
